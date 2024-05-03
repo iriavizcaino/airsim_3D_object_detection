@@ -1,0 +1,6 @@
+msgpack-rpc-python
+numpy
+backports.ssl_match_hostname
+airsim
+opencv-python
+transforms3d    #Para el cubo
