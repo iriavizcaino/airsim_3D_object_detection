@@ -1,0 +1,15 @@
+Estimación de Pose 6D en entornos de simulación fotorrealista para seguimiento aéreo de objetivos
+
+Simulación Fotorrealista para generación sintética de datos para estimación de pose 6D
+
+Generación de datos sintéticos para estimación de pose 6D en entorno de simulación fotorrealista
+
+Unreal Engine para generación de datos sintéticos para estimación de pose 6D monocular RGB
+
+Generación automática de datos sintéticos para entrenado de modelos de visión artificial: Detección de objetos y Estimación de Pose 6D
+
+Redes neuronales convolucionales para estimación de pose 6D
+
+Redes neuronales convolucionales para estimación de pose 6D a partir de imágenes sintéticas de un entorno de simulación
+
+para seguimiento aéreo de objetivos
