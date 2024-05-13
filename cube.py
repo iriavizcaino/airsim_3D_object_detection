@@ -73,7 +73,7 @@ def box_vertices(p_min, p_max):
 
 def oriented_box(vertices, orientation):
     # Convert quaternion to rotation matrix
-    [y,b,a] = quat2euler(orientation, 'sxyz')
+    [y,b,a] = quat2euler(orientation, 'sxyz') # roll - pitch - yaw
 
     print(f" \nroll = {y} rad {math.degrees(y)}º, \npitch = {b} rad {math.degrees(b)}º, \nyaw = {a} rad {math.degrees(a)}º")
 
@@ -91,8 +91,8 @@ def oriented_box(vertices, orientation):
     for vertex in vertices:
         translated_vertex = [v - center[i] for i, v in enumerate(vertex)]
         rotated_vertex = [sum(m * tv for m, tv in zip(row, translated_vertex)) for row in rot_mat] 
-        rotated_vertex[0] += center[0] 
-        rot_vertices.append(rotated_vertex)
+        summed_vertex = [x + y for x, y in zip(rotated_vertex, center)]
+        rot_vertices.append(summed_vertex)
 
     print("Rotated vertices: ")
     for v in rot_vertices:
