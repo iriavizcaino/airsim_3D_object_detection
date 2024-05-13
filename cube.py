@@ -29,49 +29,24 @@ def camera_matrix(client, imw, imh):
     # Define Focal Length
     F = client.simGetFocalLength("0")
 
-    ## Others parameters
-    # Optical center (principal point), in pixels
-    cx = imw/2
-    cy = imh/2
-
     # Calculate Focal Lengths expressed in pixels
     fx = F/px
     fy = F/py
     # fx = 0
     # fy = 0
+
+    ## Others parameters
+    # Optical center (principal point), in pixels
+    cx = imw/2
+    cy = imh/2
+
+    s = 0   # Skew coefficient 
+
     intrinsic_matrix =  [[1,  0,  0],
-                        [cx, fx, 0],
+                        [cx, fx, s],
                         [cy, 0,  fy]]
                         
     return intrinsic_matrix
-
-def rotation_matrix(r, p, y):
-    # Define rotation matrices
-    Rx = [
-        (1,         0,          0),
-        (0, np.cos(r), -np.sin(r)),
-        (0, np.sin(r),  np.cos(r))
-    ]
-
-    Ry = [
-        ( np.cos(p), 0, np.sin(p)),
-        (    0     , 1,     0    ),
-        (-np.sin(p), 0, np.cos(p))
-    ]
-
-    Rz = [
-        ( np.cos(y), np.sin(y), 0),
-        (-np.sin(y), np.cos(y), 0),
-        (    0,          0,     1)
-    ]
-
-    
-
-    # Combine rotations
-    rot_mat = np.matmul(np.matmul(Rx,Ry),Rz)
-    print(rot_mat)
-
-    return rot_mat
     
 
 def box_vertices(p_min, p_max):
@@ -98,28 +73,27 @@ def box_vertices(p_min, p_max):
 
 def oriented_box(vertices, orientation):
     # Convert quaternion to rotation matrix
-    rot_mat = quat2mat(orientation)
-
     [y,b,a] = quat2euler(orientation, 'sxyz')
 
-    # [b,y,a] = airsim.utils.to_eularian_angles(orientation) # pitch (y-axis rot), roll (x_axis rot), yaw (z-axis rot)
     print(f" \nroll = {y} rad {math.degrees(y)}º, \npitch = {b} rad {math.degrees(b)}º, \nyaw = {a} rad {math.degrees(a)}º")
 
-    # rot_mat = rotation_matrix(y, b, a)
-    # rot_mat  = [
-    #     [ np.cos(a) * np.cos(b) * np.cos(y) - np.sin(a) * np.sin(y),     -np.cos(a) * np.cos(b) * np.sin(y) - np.sin(a) * np.cos(y),     np.cos(a) * np.sin(b)],
-    #     [ np.sin(a) * np.cos(b) * np.cos(y) + np.cos(a) * np.sin(y),     -np.sin(a) * np.cos(b) * np.sin(y) + np.cos(a) * np.cos(y),     np.sin(a) * np.sin(b)],
-    #     [-np.sin(b) * np.cos(y)                                    ,      np.sin(b) * np.sin(y)                                    ,     np.cos(b)            ],
-    # ]
+    rot_mat = [
+        [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y)],
+        [np.sin(a)*np.cos(b),  np.sin(a)*np.sin(b)*np.sin(y)+np.cos(a)*np.cos(y),  np.sin(a)*np.sin(b)*np.cos(y)-np.cos(a)*np.sin(y)],
+        [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              ]
+    ]
 
-    # rot_mat = [
-    #     [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y)],
-    #     [np.sin(a)*np.cos(b),  np.sin(a)*np.sin(b)*np.sin(y)+np.cos(a)*np.cos(y),  np.sin(a)*np.sin(b)*np.cos(y)-np.cos(a)*np.sin(y)],
-    #     [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              ]
-    # ]
+    ## Apply rotation
+    # Center the cube (assuming origin as center)
+    center = [sum(v[i] for v in vertices) / len(vertices) for i in range(3)]
 
-    # Apply rotation
-    rot_vertices = [np.dot(rot_mat, vertice) for vertice in vertices]
+    rot_vertices = []
+    for vertex in vertices:
+        translated_vertex = [v - center[i] for i, v in enumerate(vertex)]
+        rotated_vertex = [sum(m * tv for m, tv in zip(row, translated_vertex)) for row in rot_mat] 
+        rotated_vertex[0] += center[0] 
+        rot_vertices.append(rotated_vertex)
+
     print("Rotated vertices: ")
     for v in rot_vertices:
         print(v)
@@ -162,7 +136,7 @@ if __name__ == '__main__':
 
         if detects:
             for detect in detects:
-                    print(detect)
+                    # print(detect)
                     p_min = (detect.box3D.min.x_val*100, 
                             detect.box3D.min.y_val*100, 
                             detect.box3D.min.z_val*100)
@@ -176,11 +150,11 @@ if __name__ == '__main__':
                             -detect.relative_pose.orientation.y_val, 
                             -detect.relative_pose.orientation.z_val]   
 
-                    box_vertices = box_vertices(p_min, p_max)
+                    vertices = box_vertices(p_min, p_max)
 
-                    oriented_box_vertices = oriented_box(box_vertices, orientation)
+                    oriented_box_vertices = oriented_box(vertices, orientation)
 
-                    points_2D_box = image_points(box_vertices, cam_mat)
+                    points_2D_box = image_points(vertices, cam_mat)
 
                     points_2D_oriented_box = image_points(oriented_box_vertices, cam_mat)
 
@@ -202,7 +176,7 @@ if __name__ == '__main__':
         draw_points(png, points_list2, text, (255, 0, 0))
 
         # Legend
-        cv2.putText(png, "Vertices sin rotación", (100,50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+        cv2.putText(png, "Vertices sin rotacion", (100,50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
         cv2.putText(png, "Vertices rotados", (100,70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
 
         # Displaying the Image with Drawn Points
