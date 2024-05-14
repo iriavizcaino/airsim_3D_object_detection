@@ -20,10 +20,6 @@ if __name__ == '__main__':
     client.simAddDetectionFilterMeshName(second_camera, image_type, DET_OBJ_NAME) 
 
     while True:
-        rawImage = client.simGetImage(second_camera, image_type)
-        if not rawImage:
-            print("No Image")
-            exit()
 
         object_pose = client.simGetObjectPose(DET_OBJ_NAME)
 
@@ -34,6 +30,7 @@ if __name__ == '__main__':
                     ]
 
         [y,b,a] = quat2euler(orientation, 'sxyz') # roll - pitch - yaw
+        print(f" \nroll = {y} rad {math.degrees(y)}º, \npitch = {b} rad {math.degrees(b)}º, \nyaw = {a} rad {math.degrees(a)}º")
 
         rot_mat = [
             [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y), object_pose.position.x_val],
@@ -47,7 +44,7 @@ if __name__ == '__main__':
         # Instance secondary camera
         camera_pose = airsim.Pose(
             airsim.Vector3r(pos[0],pos[1],pos[2]),
-            airsim.to_quaternion(-b, -y, math.pi + a)
+            airsim.to_quaternion(-b, -y, math.pi + a) # PRY
         )
 
         client.simSetCameraPose(1, camera_pose)
@@ -61,3 +58,5 @@ if __name__ == '__main__':
         # Displaying the Image with Drawn Points
         cv2.imshow('Unreal',png)
         cv2.waitKey(1)
+    
+    cv2.destroyAllWindows()
