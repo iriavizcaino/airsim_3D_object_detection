@@ -119,6 +119,42 @@ def image_points(vertices, cam_mat):
     
     return vertices_2D
 
+def second_camera_position(client, cam_name):
+    # Get Object Pose
+    object_pose = client.simGetObjectPose(DET_OBJ_NAME)
+
+    # Extract orientation
+    orientation = [object_pose.orientation.w_val,
+                object_pose.orientation.x_val,
+                object_pose.orientation.y_val,
+                object_pose.orientation.z_val,
+                ]
+
+    # Convert orientation to Euler angles
+    [y,b,a] = quat2euler(orientation, 'sxyz') # roll - pitch - yaw
+
+    # Transformation matrix
+    transf_mat = [
+        [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y), object_pose.position.x_val],
+        [np.sin(a)*np.cos(b),  np.sin(a)*np.sin(b)*np.sin(y)+np.cos(a)*np.cos(y),  np.sin(a)*np.sin(b)*np.cos(y)-np.cos(a)*np.sin(y), object_pose.position.y_val],
+        [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              , object_pose.position.z_val]
+    ]
+
+    # Relative pose
+    rel_pose = np.array([2.5,0,0,1]) # Object-camera distance
+    pos = np.dot(transf_mat, rel_pose)
+
+    # Instance secondary camera
+    camera_pose = airsim.Pose(
+        airsim.Vector3r(pos[0],pos[1]-0.125,pos[2]),
+        airsim.to_quaternion(-b, -y, math.pi + a)
+    )
+    
+    client.simSetCameraPose(cam_name, camera_pose)
+
+    print(client.simGetCameraInfo(cam_name).pose)
+
+
 if __name__ == '__main__':
     # Define client
     client = airsim.VehicleClient()
@@ -134,50 +170,68 @@ if __name__ == '__main__':
     client.simSetDetectionFilterRadius(second_camera, image_type, 200 * 100) 
     client.simAddDetectionFilterMeshName(second_camera, image_type, DET_OBJ_NAME) 
 
-    #while True:
-    for i in range(3):
-        client.simSetObjectPose(
-            DET_OBJ_NAME,
-            airsim.Pose(
-                airsim.Vector3r(3,0,0),
-                airsim.to_quaternion(0, np.deg2rad(i*10), 0) # PRY
-            ),
-            True
-        )
-        time.sleep(0.1)
-        # Get Object Pose
-        object_pose = client.simGetObjectPose(DET_OBJ_NAME)
+    ##### INITIAL DETECTION #####
+    client.simSetObjectPose(
+        DET_OBJ_NAME,
+        airsim.Pose(
+            airsim.Vector3r(2.5,0,0),
+            airsim.to_quaternion(0,0,0)
+        ),
+        True
+    )
+    time.sleep(0.1)
 
-        # Extract orientation
-        orientation = [object_pose.orientation.w_val,
-                    object_pose.orientation.x_val,
-                    object_pose.orientation.y_val,
-                    object_pose.orientation.z_val,
-                    ]
+    # Instantiate camera
+    second_camera_position(client, second_camera)
 
-        # Convert orientation to Euler angles
-        [y,b,a] = quat2euler(orientation, 'sxyz') # roll - pitch - yaw
+    # Get image
+    initialImage = client.simGetImage(second_camera, image_type)
+    if not initialImage:
+        print("No Initial Image")
+        exit()
 
-        # Transformation matrix
-        transf_mat = [
-            [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y), object_pose.position.x_val],
-            [np.sin(a)*np.cos(b),  np.sin(a)*np.sin(b)*np.sin(y)+np.cos(a)*np.cos(y),  np.sin(a)*np.sin(b)*np.cos(y)-np.cos(a)*np.sin(y), object_pose.position.y_val],
-            [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              , object_pose.position.z_val]
-        ]
+    # Decode image
+    ipng = cv2.imdecode(airsim.string_to_uint8_array(initialImage), cv2.IMREAD_UNCHANGED)
+    detects = client.simGetDetections(second_camera, image_type)
 
-        # Relative pose
-        rel_pose = np.array([object_pose.position.x_val,0,0,1]) # Object-camera distance
-        pos = np.dot(transf_mat, rel_pose)
+    imw = get_width(ipng)
+    imh = get_height(ipng)
 
-        # Instance secondary camera
-        camera_pose = airsim.Pose(
-            airsim.Vector3r(pos[0],pos[1],pos[2]),
-            airsim.to_quaternion(-b, -y, math.pi + a)
-        )
-        client.simSetCameraPose(second_camera, camera_pose)
+    # Get camera matrix for each camera
+    gen_cam_mat = camera_matrix(client, imw, imh, general_camera)
+    sec_cam_mat = camera_matrix(client, imw, imh, second_camera)
 
-        time.sleep(0.1)
+    cam_initial_pose = client.simGetCameraInfo(second_camera).pose.position
 
+    if detects:
+        for detect in detects:
+            p_min = (detect.box3D.min.x_val*100, 
+                    detect.box3D.min.y_val*100, 
+                    detect.box3D.min.z_val*100)
+
+            p_max = (detect.box3D.max.x_val*100, 
+                    detect.box3D.max.y_val*100, 
+                    detect.box3D.max.z_val*100)
+
+            orientation = [detect.relative_pose.orientation.w_val, 
+                    -detect.relative_pose.orientation.x_val, 
+                    -detect.relative_pose.orientation.y_val, 
+                    -detect.relative_pose.orientation.z_val]
+
+            vertices = box_vertices(p_min, p_max)
+
+            oriented_box_vertices = oriented_box(vertices, orientation)
+
+            points_2D_box = image_points(vertices, sec_cam_mat) 
+            
+            points_2D_oriented_box = image_points(oriented_box_vertices, sec_cam_mat)
+
+    # Round points for image print
+    points_list1 = []
+    for point in points_2D_oriented_box:
+        points_list1.append([round(point[0]), round(point[1])])   
+
+    while True:
         # Get image
         rawImage = client.simGetImage(second_camera, image_type)
         if not rawImage:
@@ -186,45 +240,11 @@ if __name__ == '__main__':
 
         # Decode image
         png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
-        detects = client.simGetDetections(second_camera, image_type)
 
-        imw = get_width(png)
-        imh = get_height(png)
-
-        # Get camera matrix for each camera
-        gen_cam_mat = camera_matrix(client, imw, imh, general_camera)
-        sec_cam_mat = camera_matrix(client, imw, imh, second_camera)
-
-        if detects:
-            for detect in detects:
-                print(f"Roll angle = {i*10}\n", detect)
-                p_min = (detect.box3D.min.x_val*100, 
-                        detect.box3D.min.y_val*100, 
-                        detect.box3D.min.z_val*100)
-
-                p_max = (detect.box3D.max.x_val*100, 
-                        detect.box3D.max.y_val*100, 
-                        detect.box3D.max.z_val*100)
-
-                orientation = [detect.relative_pose.orientation.w_val, 
-                        -detect.relative_pose.orientation.x_val, 
-                        -detect.relative_pose.orientation.y_val, 
-                        -detect.relative_pose.orientation.z_val]
-
-                vertices = box_vertices(p_min, p_max)
-
-                oriented_box_vertices = oriented_box(vertices, orientation)
-
-                points_2D_box = image_points(vertices, sec_cam_mat) 
-                
-                points_2D_oriented_box = image_points(oriented_box_vertices, sec_cam_mat)
+        # Instantiate camera
+        second_camera_position(client, second_camera)
 
         ######### PRINT ##############
-        ## Round points for image print
-        points_list1 = []
-        for point in points_2D_oriented_box:
-            points_list1.append([round(point[0]), round(point[1])])   
-
         ## Points
         draw_bbox(png, points_list1, (255, 0, 0))
 
@@ -233,6 +253,6 @@ if __name__ == '__main__':
 
         ## Displaying the Image with Drawn Points
         cv2.imshow('Unreal',png)
-        cv2.waitKey(1*1000)
+        cv2.waitKey(1)
 
     cv2.destroyAllWindows()

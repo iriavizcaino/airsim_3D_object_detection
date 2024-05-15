@@ -1,7 +1,7 @@
 import airsim
 import re
 import cv2
-from transforms3d.quaternions import quat2mat
+from transforms3d.quaternions import quat2mat, qmult
 from transforms3d.euler import quat2euler
 import numpy as np
 import math
@@ -137,6 +137,13 @@ if __name__ == '__main__':
         if not rawImage:
             exit()
 
+        # print(cont)
+        # print("Camera Info ", client.simGetCameraInfo(camera_name))
+        # print("FilmbackSettings: ", client.simGetFilmbackSettings(camera_name))
+        # print("FocalLength: ", client.simGetFocalLength(camera_name))
+        # print("FocusDistance: ", client.simGetFocusDistance(camera_name))
+        # print("LensSettings: ", client.simGetLensSettings(camera_name))
+
         png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
         detects = client.simGetDetections(camera_name, image_type)
 
@@ -145,6 +152,11 @@ if __name__ == '__main__':
 
         cam_mat = camera_matrix(client, imw, imh)
 
+        veh_pose_orientation = [client.simGetVehiclePose().orientation.w_val,
+                            client.simGetVehiclePose().orientation.x_val,
+                            client.simGetVehiclePose().orientation.y_val,
+                            client.simGetVehiclePose().orientation.z_val]
+                            
         if detects:
             for detect in detects:
                 print(detect)
@@ -156,14 +168,17 @@ if __name__ == '__main__':
                         detect.box3D.max.y_val*100, 
                         detect.box3D.max.z_val*100)
 
-                orientation = [detect.relative_pose.orientation.w_val, 
+                detect_orientation = [detect.relative_pose.orientation.w_val, 
                         -detect.relative_pose.orientation.x_val, 
                         -detect.relative_pose.orientation.y_val, 
-                        -detect.relative_pose.orientation.z_val]   
+                        -detect.relative_pose.orientation.z_val]  
+
+                total_orientation = qmult(veh_pose_orientation, detect_orientation)
+                print(total_orientation)
 
                 vertices = box_vertices(p_min, p_max)
 
-                oriented_box_vertices = oriented_box(vertices, orientation)
+                oriented_box_vertices = oriented_box(vertices, total_orientation)
 
                 points_2D_box = image_points(vertices, cam_mat)
 
