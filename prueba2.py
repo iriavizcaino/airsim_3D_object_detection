@@ -55,18 +55,18 @@ def camera_matrix(client, imw, imh,camera_name):
     
     return intrinsic_matrix
 
-def transformation_matrix(pose):
+def transformation_matrix(angles,position):
     # Convert orientation to Euler angles
-    [b,y,a] = airsim.utils.to_eularian_angles(pose.orientation) # PRY
+    [b,y,a] = angles #PRY
 
     # Transformation matrix
     transf_mat = [
-        [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y), pose.position.x_val],
-        [np.sin(a)*np.cos(b),  np.sin(a)*np.sin(b)*np.sin(y)+np.cos(a)*np.cos(y),  np.sin(a)*np.sin(b)*np.cos(y)-np.cos(a)*np.sin(y), pose.position.y_val],
-        [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              , pose.position.z_val],
+        [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y), position[0]],
+        [np.sin(a)*np.cos(b),  np.sin(a)*np.sin(b)*np.sin(y)+np.cos(a)*np.cos(y),  np.sin(a)*np.sin(b)*np.cos(y)-np.cos(a)*np.sin(y), position[1]],
+        [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              , position[2]],
         [ 0,0,0,1],
     ]
-    print(f"\n Matriz de transformación = {transf_mat}")
+    # print(f"\n Matriz de transformación = {transf_mat}")
 
     return transf_mat
 
@@ -96,24 +96,24 @@ def box_vertices(p_min, p_max):
 ## Function to orient bounding box
 def oriented_box(vertices, pose):
     # Transformation matrix
-    TF = np.linalg.inv(transformation_matrix(pose))
+    TF = transformation_matrix(pose)
     TM = [TF[0][3], TF[1][3], TF[2][3]]
     print(TM)
 
     ## Apply rotation
     # Center the cube (assuming origin as center)
     center = [sum(v[i] for v in vertices) / len(vertices) for i in range(3)]
-    print(f"center = {center}")
+    # print(f"center = {center}")
 
     rot_vertices = []
     for vertex in vertices:
-        print("\nVertice: ",vertex)
+        # print("\nVertice: ",vertex)
         center_vertex = [v - center[i] for i, v in enumerate(vertex)]
-        print("\nCenter Vertice: ",center_vertex)
+        # print("\nCenter Vertice: ",center_vertex)
         rotated_vertex = np.dot([row[:3] for row in TF[:3]],center_vertex) + center
-        print("\nRotated Vertice: ",rotated_vertex)
+        # print("\nRotated Vertice: ",rotated_vertex)
         translated_vertex = [TM[0]-rotated_vertex[0], TM[1]-rotated_vertex[1], TM[2]-rotated_vertex[2]]
-        print("\nTranslated Vertice: ",translated_vertex)
+        # print("\nTranslated Vertice: ",translated_vertex)
 
         #rot_vertices.append(rotated_vertex)
         rot_vertices.append(translated_vertex)
@@ -140,17 +140,21 @@ def instantiate_camera(client, cam_name):
     object_pose = client.simGetObjectPose(DET_OBJ_NAME)
 
     # Convert orientation to Euler angles
-    [b,y,a] = airsim.utils.to_eularian_angles(object_pose.orientation) # PRY
+    angles = airsim.utils.to_eularian_angles(object_pose.orientation) # PRY
+    position = [object_pose.position.x_val,
+            object_pose.position.y_val,
+            object_pose.position.z_val
+            ]
 
     # Relative pose
     rel_pose = np.array([2.5,0,0,1]) # Object-camera distance
-    TF = transformation_matrix(object_pose)
+    TF = transformation_matrix(angles, position)
     pos = np.dot(TF, rel_pose)
 
     # Instantiate secondary camera
     camera_pose = airsim.Pose(
         airsim.Vector3r(pos[0],pos[1]-0.125,pos[2]),
-        airsim.to_quaternion(-b, -y, math.pi + a)
+        airsim.to_quaternion(-angles[0], -angles[1], math.pi + angles[2])
     )
     
     client.simSetCameraPose(cam_name, camera_pose)
@@ -244,43 +248,62 @@ if __name__ == '__main__':
         # Instantiate camera
         instantiate_camera(client, second_camera)
 
+        # print("Vertices")
+        # for v in vertices:
+        #     print(v)
+
         ## Calculate vertices coordinates respect to the world
         sec_camera_pose = client.simGetCameraInfo(second_camera).pose
-        print(f"Pose camera 2: {sec_camera_pose}")
+        # print(f"Pose camera 2: {sec_camera_pose}")
         veh_pose = client.simGetVehiclePose()
         obj_pose = client.simGetObjectPose(DET_OBJ_NAME)
 
-        # sec_camera_orientation =[
-        #     sec_camera_pose.orientation.w_val,
-        #     sec_camera_pose.orientation.x_val,
-        #     sec_camera_pose.orientation.y_val,
-        #     sec_camera_pose.orientation.z_val
-        # ]
+        sec_camera_orientation = airsim.utils.to_eularian_angles(sec_camera_pose.orientation) # PRY
+        veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation) # PRY
 
-        # translation = [
-        #     veh_pose.x_val - sec_camera_pose.position.x_val,
-        #     veh_pose.y_val - sec_camera_pose.position.y_val,
-        #     veh_pose.z_val - sec_camera_pose.position.z_val
-        # ]
+        orientation = [x - y for x,y in zip(veh_orientation,sec_camera_orientation)]
 
-        # print("\nVertices respecto a la cámara 2")
-        # for v in vertices:
+        print("Secondary camera Orientation")
+        print(f"Roll = {np.rad2deg(sec_camera_orientation[1])}, Pitch = {np.rad2deg(sec_camera_orientation[0])}, yaw = {np.rad2deg(sec_camera_orientation[2])}\n")
+
+        print("Vehicle Orientation")
+        print(f"Roll = {np.rad2deg(veh_orientation[1])}, Pitch = {np.rad2deg(veh_orientation[0])}, yaw = {np.rad2deg(veh_orientation[2])}\n")
+
+        print("General Orientation")
+        print(f"Roll = {np.rad2deg(orientation[1])}, Pitch = {np.rad2deg(orientation[0])}, yaw = {np.rad2deg(orientation[2])}\n")
+        translation = [
+            veh_pose.position.x_val - obj_pose.position.x_val,
+            veh_pose.position.y_val - obj_pose.position.y_val,
+            veh_pose.position.z_val - obj_pose.position.z_val
+        ]
+
+        TF = transformation_matrix(orientation, translation)
+        TM = [TF[0][3], TF[1][3], TF[2][3]]
+        # print(TM)
+
+        ## Apply rotation
+        # Center the cube (assuming origin as center)
+        center = [sum(v[i] for v in vertices) / len(vertices) for i in range(3)]
+        # print(f"center = {center}")
+
+        rot_vertices = []
+        for vertex in vertices:
+            # print("\nVertice: ",vertex)
+            center_vertex = [v - center[i] for i, v in enumerate(vertex)]
+            # print("\nCenter Vertice: ",center_vertex)
+            rotated_vertex = np.dot([row[:3] for row in TF[:3]],center_vertex) + center
+            # print("\nRotated Vertice: ",rotated_vertex)
+            translated_vertex = [TM[0]-rotated_vertex[0] + center[0], TM[1]-rotated_vertex[1]+center[1], TM[2]-rotated_vertex[2]+center[2]] 
+            # print("\nTranslated Vertice: ",translated_vertex)
+
+            #rot_vertices.append(rotated_vertex)
+            rot_vertices.append(translated_vertex)
+
+        # print("Rot_vertices")
+        # for v in rot_vertices:
         #     print(v)
-        
-        world_vertices = oriented_box(vertices, sec_camera_pose)
-        # world_vertices = oriented_box(vertices, obj_pose)
 
-        print("\nVertices respecto al mundo")
-        for v in world_vertices:
-            print(v)
-
-        cam1_vertices = oriented_box(world_vertices, veh_pose)
-
-        # print("\nVertices respecto a la cámara 1")
-        # for v in cam1_vertices:
-        #     print(v)
-
-        points2D = image_points(cam1_vertices, gen_cam_mat)
+        points2D = image_points(rot_vertices, gen_cam_mat)
 
         points_list1 = []
         for point in points2D:
