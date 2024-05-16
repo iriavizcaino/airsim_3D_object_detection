@@ -26,7 +26,7 @@ def draw_bbox(image, points_list, color):
 ## Function to calculate camera intrinsic matrix
 def camera_matrix(client, imw, imh,camera_name):
     # Get filmback settings using regular expressions
-    data = client.simGetFilmbackSettings(camera_name)
+    data = client.simGetFilmbackSettings(camera_name, external=True)
     sensor_width = float(re.search(r"Sensor Width: (\d+\.\d+)", data).group(1))
     sensor_height = float(re.search(r"Sensor Height: (\d+\.\d+)", data).group(1))
 
@@ -35,7 +35,7 @@ def camera_matrix(client, imw, imh,camera_name):
     py = sensor_height/imh
 
     # Get focal length
-    F = client.simGetFocalLength(camera_name)
+    F = client.simGetFocalLength(camera_name, external=True)
 
     # Calculate focal lengths in pixels
     fx = F/px
@@ -157,7 +157,7 @@ def instantiate_camera(client, cam_name):
         airsim.to_quaternion(-angles[0], -angles[1], math.pi + angles[2])
     )
     
-    client.simSetCameraPose(cam_name, camera_pose)
+    client.simSetCameraPose(cam_name, camera_pose, external=True)
 
 
 if __name__ == '__main__':
@@ -167,13 +167,13 @@ if __name__ == '__main__':
 
     # Camera names
     general_camera = "0"
-    second_camera = "1"
+    second_camera = "fixed1"
 
     image_type = airsim.ImageType.Scene
     
     # Set detection filter
-    client.simSetDetectionFilterRadius(second_camera, image_type, 200 * 100) 
-    client.simAddDetectionFilterMeshName(second_camera, image_type, DET_OBJ_NAME) 
+    client.simSetDetectionFilterRadius(second_camera, image_type, 200 * 100, external=True) 
+    client.simAddDetectionFilterMeshName(second_camera, image_type, DET_OBJ_NAME, external=True) 
 
     ##### INITIAL DETECTION #####
     client.simSetObjectPose(
@@ -190,23 +190,23 @@ if __name__ == '__main__':
     instantiate_camera(client, second_camera)
 
     # Get image
-    initialImage = client.simGetImage(second_camera, image_type)
+    initialImage = client.simGetImage(second_camera, image_type, external=True)
     if not initialImage:
         print("No Initial Image")
         exit()
 
     # Decode image
     ipng = cv2.imdecode(airsim.string_to_uint8_array(initialImage), cv2.IMREAD_UNCHANGED)
-    detects = client.simGetDetections(second_camera, image_type)
+    detects = client.simGetDetections(second_camera, image_type, external=True)
 
     imw = get_width(ipng)
     imh = get_height(ipng)
 
     # Get camera matrix for each camera
-    gen_cam_mat = camera_matrix(client, imw, imh, general_camera)
+    # gen_cam_mat = camera_matrix(client, imw, imh, general_camera)
     sec_cam_mat = camera_matrix(client, imw, imh, second_camera)
 
-    cam_initial_pose = client.simGetCameraInfo(second_camera).pose.position
+    # cam_initial_pose = client.simGetCameraInfo(second_camera).pose.position
 
     if detects:
         for detect in detects:
@@ -253,7 +253,7 @@ if __name__ == '__main__':
         #     print(v)
 
         ## Calculate vertices coordinates respect to the world
-        sec_camera_pose = client.simGetCameraInfo(second_camera).pose
+        sec_camera_pose = client.simGetCameraInfo(second_camera, external=True).pose
         # print(f"Pose camera 2: {sec_camera_pose}")
         veh_pose = client.simGetVehiclePose()
         obj_pose = client.simGetObjectPose(DET_OBJ_NAME)
@@ -262,6 +262,7 @@ if __name__ == '__main__':
         veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation) # PRY
 
         orientation = [x - y for x,y in zip(veh_orientation,sec_camera_orientation)]
+        orientation[2] = math.pi - orientation[2]
 
         print("Secondary camera Orientation")
         print(f"Roll = {np.rad2deg(sec_camera_orientation[1])}, Pitch = {np.rad2deg(sec_camera_orientation[0])}, yaw = {np.rad2deg(sec_camera_orientation[2])}\n")
@@ -303,7 +304,7 @@ if __name__ == '__main__':
         # for v in rot_vertices:
         #     print(v)
 
-        points2D = image_points(rot_vertices, gen_cam_mat)
+        points2D = image_points(rot_vertices, sec_cam_mat)
 
         points_list1 = []
         for point in points2D:
