@@ -260,9 +260,14 @@ if __name__ == '__main__':
 
         sec_camera_orientation = airsim.utils.to_eularian_angles(sec_camera_pose.orientation) # PRY
         veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation) # PRY
+        obj_orientation = airsim.utils.to_eularian_angles(obj_pose.orientation) # PRY
 
-        orientation = [x - y for x,y in zip(veh_orientation,sec_camera_orientation)]
-        orientation[2] = math.pi - orientation[2]
+        # orientation = [x - y for x,y in zip(veh_orientation,sec_camera_orientation)]
+        # orientation[2] = math.pi - orientation[2]
+        orientation = [y - x for x,y in zip(veh_orientation,obj_orientation)]
+
+        print("Object Orientation")
+        print(f"Roll = {np.rad2deg(obj_orientation[1])}, Pitch = {np.rad2deg(obj_orientation[0])}, yaw = {np.rad2deg(obj_orientation[2])}\n")        
 
         print("Secondary camera Orientation")
         print(f"Roll = {np.rad2deg(sec_camera_orientation[1])}, Pitch = {np.rad2deg(sec_camera_orientation[0])}, yaw = {np.rad2deg(sec_camera_orientation[2])}\n")
@@ -278,7 +283,8 @@ if __name__ == '__main__':
             veh_pose.position.z_val - obj_pose.position.z_val
         ]
 
-        TF = transformation_matrix(orientation, translation)
+        # TF = transformation_matrix(orientation, translation)
+        TF = transformation_matrix(obj_orientation, translation)
         TM = [TF[0][3], TF[1][3], TF[2][3]]
         # print(TM)
 
@@ -306,8 +312,17 @@ if __name__ == '__main__':
 
         points2D = image_points(rot_vertices, sec_cam_mat)
 
+        data = client.simGetCurrentFieldOfView(general_camera)
+        fov = [
+            float(re.search(r"Horizontal Field Of View: (\d+\.\d+)", data).group(1)),   # HFOV
+            float(re.search(r"Vertical Field Of View: (\d+\.\d+)", data).group(1))      # VFOV
+            ]
+
+        corr = [- veh_orientation[2] * imw/2 / np.deg2rad(fov[0]/2), veh_orientation[0] * imh/2 / np.deg2rad(fov[1]/2)]
+
         points_list1 = []
-        for point in points2D:
+        for p in points2D:
+            point = p + corr
             points_list1.append([round(point[0]), round(point[1])]) 
 
         # for p in points_list1:
