@@ -2,10 +2,8 @@ import airsim
 import cv2
 import math
 import numpy as np
-from transforms3d.euler import quat2euler
 import re
 import time
-import pprint
 
 # Lambda functions to get width and height of an image
 get_width = lambda cv2_img : (cv2_img.shape[1])
@@ -260,11 +258,12 @@ if __name__ == '__main__':
 
         sec_camera_orientation = airsim.utils.to_eularian_angles(sec_camera_pose.orientation) # PRY
         veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation) # PRY
+        veh_orientation = (-veh_orientation[0], -veh_orientation[1], -veh_orientation[2])
         obj_orientation = airsim.utils.to_eularian_angles(obj_pose.orientation) # PRY
 
         # orientation = [x - y for x,y in zip(veh_orientation,sec_camera_orientation)]
         # orientation[2] = math.pi - orientation[2]
-        orientation = [y - x for x,y in zip(veh_orientation,obj_orientation)]
+        orientation = [x - y for x,y in zip(veh_orientation,obj_orientation)]
 
         print("Object Orientation")
         print(f"Roll = {np.rad2deg(obj_orientation[1])}, Pitch = {np.rad2deg(obj_orientation[0])}, yaw = {np.rad2deg(obj_orientation[2])}\n")        
@@ -281,6 +280,18 @@ if __name__ == '__main__':
             veh_pose.position.x_val - obj_pose.position.x_val,
             veh_pose.position.y_val - obj_pose.position.y_val,
             veh_pose.position.z_val - obj_pose.position.z_val
+        ]
+
+        obj_position = [
+            obj_pose.position.x_val,
+            obj_pose.position.y_val,
+            obj_pose.position.z_val
+        ]
+
+        veh_position = [
+            veh_pose.position.x_val,
+            veh_pose.position.y_val,
+            veh_pose.position.z_val
         ]
 
         # TF = transformation_matrix(orientation, translation)
@@ -306,23 +317,19 @@ if __name__ == '__main__':
             #rot_vertices.append(rotated_vertex)
             rot_vertices.append(translated_vertex)
 
+        TF = transformation_matrix(veh_orientation, [0,0,0])
+        vertices2 = []
+        for v in rot_vertices:
+            vertices2.append(np.dot([row[:3] for row in TF[:3]],v))
+
         # print("Rot_vertices")
         # for v in rot_vertices:
         #     print(v)
 
-        points2D = image_points(rot_vertices, sec_cam_mat)
-
-        data = client.simGetCurrentFieldOfView(general_camera)
-        fov = [
-            float(re.search(r"Horizontal Field Of View: (\d+\.\d+)", data).group(1)),   # HFOV
-            float(re.search(r"Vertical Field Of View: (\d+\.\d+)", data).group(1))      # VFOV
-            ]
-
-        corr = [- veh_orientation[2] * imw/2 / np.deg2rad(fov[0]/2), veh_orientation[0] * imh/2 / np.deg2rad(fov[1]/2)]
+        points2D = image_points(vertices2, sec_cam_mat)
 
         points_list1 = []
-        for p in points2D:
-            point = p + corr
+        for point in points2D:
             points_list1.append([round(point[0]), round(point[1])]) 
 
         # for p in points_list1:
