@@ -2,7 +2,13 @@ Estimación de Pose 6D en entornos de simulación fotorrealista para seguimiento
 
 Simulación Fotorrealista para generación sintética de datos para estimación de pose 6D
 
-Generación de datos sintéticos para estimación de pose 6D en entorno de simulación fotorrealista
+Generación de datos sintéticos para estimación de pose 6D en entornos de simulación fotorrealista con AirSim y Unreal Engine
+
+
+Deep Learning para estimación de pose 6D con generación automática de datos sintéticos en entornos de simulación fotorrealista utilizando AirSim y Unreal Engine
+
+Deep Learning for 6D pose estimation with automated synthetic data generation in photorrealistic simulation environments using AirSim and Unreal Engine
+
 
 Unreal Engine para generación de datos sintéticos para estimación de pose 6D monocular RGB
 
@@ -13,3 +19,10 @@ Redes neuronales convolucionales para estimación de pose 6D
 Redes neuronales convolucionales para estimación de pose 6D a partir de imágenes sintéticas de un entorno de simulación
 
 para seguimiento aéreo de objetivos
+
+Resumen:
+
+- Trata de implementar un algoritmo de estimacion de pose 6D utilizando deep learning. Se estudia el estado del arte, se buscan implementaciones disponibles
+de los algortimos publicados en la literatura. Como input se persigue la generación automática de datos sintéticos, importando un modelo 3D en un entorno
+de simulación de Unreal Engine y aportando variabilidad mediante el desarrollo de herramientas basadas en la API de AirSim, obteniendo distintas perspectivas 
+del objeto a identificar. 

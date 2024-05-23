@@ -4,25 +4,51 @@ import math
 import numpy as np
 import re
 import time
+import transforms3d
+import random
+import os
 
 # Lambda functions to get width and height of an image
 get_width = lambda cv2_img : (cv2_img.shape[1])
 get_height = lambda cv2_img : (cv2_img.shape[0])
 
 # Define Object name
-DET_OBJ_NAME = 'excavator_185'
+DET_OBJ_NAME = 'Cube_2'
+directory_name = 'Cube'
 
-## Function to draw bounding box on image
 def draw_bbox(image, points_list, color):
-    # Text labels
+    """
+    Draws bounding box on the given image using the provided points list and color.
+
+    Args:
+    - image: The image on which the bounding box will be drawn.
+    - points_list: List of points (coordinates) defining the bounding box.
+    - color: Color of the bounding box and text labels.
+
+    Returns:
+    None
+    """
+    # Text labels for points
     text = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
 
+    # Loop through each point and draw circle and text label
     for point, txt in zip(points_list, text):
         cv2.circle(image, point, 5, color, -1)
         cv2.putText(image, txt, (point[0] , point[1] ), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-## Function to calculate camera intrinsic matrix
-def camera_matrix(client, imw, imh, camera_name):
+def camera_parameters(client, camera_name, imw, imh):
+    """
+    Calculates camera parameters based on the filmback settings and image dimensions.
+
+    Args:
+    - client: The client object used for communication with the simulator.
+    - camera_name: Name of the camera to retrieve settings for.
+    - imw: Image width in pixels.
+    - imh: Image height in pixels.
+
+    Returns:
+    - parameters: Dictionary containing the calculated camera parameters.
+    """
     # Get filmback settings using regular expressions
     data = client.simGetFilmbackSettings(camera_name)
     sensor_width = float(re.search(r"Sensor Width: (\d+\.\d+)", data).group(1))
@@ -44,26 +70,60 @@ def camera_matrix(client, imw, imh, camera_name):
     cx = imw/2
     cy = imh/2
 
-    s = 0   # Skew coefficient 
+    s = 0   # Skew coefficient
 
-    # Construct intrinsic matrix
-    intrinsic_matrix =  [[1,  0,  0],
-                        [cx, fx, s],
-                        [cy, 0,  fy]]
-    
-    return intrinsic_matrix
+    parameters = {
+        "fx" : fx,
+        "fy" : fy,
+        "sw" : sensor_width,
+        "sh" : sensor_height,
+        "cx" : cx,
+        "cy" : cy,
+        "s"  : s,
+        "imw": imw,
+        "imh": imh
+    }
 
-def transformation_matrix(angles,position):
+    return parameters
+
+def transformation_matrix(angles,position,opcion):
+    """
+    Constructs transformation matrix.
+
+    Args:
+    - angles: List containing pitch, roll, and yaw angles (PRY) in radians.
+    - position: List containing x, y, and z position coordinates.
+    - opcion: String indicating the orientation convention ("OW" for object-to-world, "WC" for world-to-camera, "CO" for camera-to-object).
+
+    Returns:
+    - rot_mat: Rotation matrix corresponding to the orientation.
+    - transl_mat: Translation matrix corresponding to the position.
+    """
     # Convert orientation to Euler angles
     [b,y,a] = angles #PRY
 
-    # Transformation matrix
-    rot_mat = [
-        [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y)],
-        [np.sin(a)*np.cos(b),  np.sin(a)*np.sin(b)*np.sin(y)+np.cos(a)*np.cos(y),  np.sin(a)*np.sin(b)*np.cos(y)-np.cos(a)*np.sin(y)],
-        [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              ],
-    ]
+    # Rotation matrix
+    if opcion == "OW":  #ZYX
+        rot_mat = [
+            [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y)],
+            [np.sin(a)*np.cos(b),  np.sin(a)*np.sin(b)*np.sin(y)+np.cos(a)*np.cos(y),  np.sin(a)*np.sin(b)*np.cos(y)-np.cos(a)*np.sin(y)],
+            [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              ],
+        ]
 
+    elif opcion == "WC":    #XYZ
+        rot_mat = [
+            [np.cos(b)*np.cos(a)                              , -np.cos(b)*np.sin(a)                              ,  np.sin(b)          ],
+            [np.cos(y)*np.sin(a)+np.sin(y)*np.sin(b)*np.cos(a),  np.cos(y)*np.cos(a)-np.sin(y)*np.sin(b)*np.sin(a), -np.sin(y)*np.cos(b)],
+            [np.sin(y)*np.sin(a)-np.cos(y)*np.sin(b)*np.cos(a),  np.sin(y)*np.cos(a)+np.cos(y)*np.sin(b)*np.sin(a),  np.cos(y)*np.cos(b)],
+        ]
+    elif opcion == "CO":
+        rot_mat = [
+            [ np.cos(a) * np.cos(b) * np.cos(y) - np.sin(a) * np.sin(y),     -np.cos(a) * np.cos(b) * np.sin(y) - np.sin(a) * np.cos(y),     np.cos(a) * np.sin(b)],
+            [ np.sin(a) * np.cos(b) * np.cos(y) + np.cos(a) * np.sin(y),     -np.sin(a) * np.cos(b) * np.sin(y) + np.cos(a) * np.cos(y),     np.sin(a) * np.sin(b)],
+            [-np.sin(b) * np.cos(y)                                    ,      np.sin(b) * np.sin(y)                                    ,     np.cos(b)            ],
+        ]
+
+    # Translation matrix
     transl_mat = [
         position[0],
         position[1],
@@ -72,11 +132,22 @@ def transformation_matrix(angles,position):
 
     return rot_mat, transl_mat
 
-## Function to calculate 3D bounding box vertices
 def box_vertices(p_min, p_max):
+    """
+    Calculates the vertices of a box given its minimum and maximum points.
+
+    Args:
+    - p_min: Tuple containing the minimum coordinates (x_min, y_min, z_min).
+    - p_max: Tuple containing the maximum coordinates (x_max, y_max, z_max).
+
+    Returns:
+    - vertices: List of tuples representing the coordinates of the box's vertices.
+    """
+    # Unpack minimum and maximum coordinates
     x_min, y_min, z_min = p_min
     x_max, y_max, z_max = p_max
 
+    # Calculate vertices
     vertices = [
         ((x_max-x_min)/2 + x_min, (y_max-y_min)/2 + y_min, (z_max-z_min)/2 + z_min),
         (x_max,y_min,z_min),
@@ -90,16 +161,153 @@ def box_vertices(p_min, p_max):
     ]
 
     return vertices
+ 
+def change_obj_pose(ranges):
+    """
+    Changes the pose (position and orientation) of an object within specified ranges.
 
-## Function to calculate image points
+    Args:
+    - ranges: List of ranges for x, y, and z displacements.
+
+    Returns:
+    None
+    """
+    # Calculate new position within specified ranges
+    new_pos = airsim.Vector3r(
+        random.uniform(ranges[0][0], ranges[0][1]),
+        random.uniform(ranges[1][0], ranges[1][1]),
+        random.uniform(ranges[2][0], ranges[2][1])
+        )
+
+    # Generate random orientation
+    new_orient = airsim.to_quaternion(
+        np.deg2rad(random.randint(0,360)),
+        np.deg2rad(random.randint(0,360)),
+        np.deg2rad(random.randint(0,360))
+    )
+
+    # Set new object pose in the simulation
+    client.simSetObjectPose(
+        DET_OBJ_NAME,
+        airsim.Pose(new_pos, new_orient),    # Random position and orientation
+        # airsim.Pose(curr_pos, new_orient), # Random orientation
+        True
+    )
+
+def change_cam_pose(client, cont, ranges):
+    """
+    Changes the pose (orientation) of the camera and adjusts the position of an object relative to it.
+
+    Args:
+    - client: The client object used for communication with the simulator.
+    - cont: Control parameter for adjusting the camera orientation.
+    - ranges: List of ranges for x, y, and z relative displacements of the object.
+
+    Returns:
+    None
+    """
+    # Adjust camera orientation
+    client.simSetVehiclePose(
+        airsim.Pose(
+            client.simGetVehiclePose().position,
+            airsim.to_quaternion(np.deg2rad(-20), 0, -cont*math.pi/4) #YXZ
+        ),
+        True
+    )
+
+    ## Calculate object position from vehicle orientation 
+    veh_pose = client.simGetVehiclePose()
+    veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation)
+
+    # Calculate transformation matrix
+    rm, tm = transformation_matrix(veh_orientation, veh_position, "OC")
+
+    # Generate random relative position for the object
+    rel_pos = [
+        random.uniform(ranges[0][0], ranges[0][1]),
+        random.uniform(ranges[1][0], ranges[1][1]),
+        random.uniform(ranges[2][0], ranges[2][1])
+    ]
+
+    # Calculate absolute position of the object
+    pos = np.dot(rm,rel_pos)+tm
+
+    # Change object pose
+    client.simSetObjectPose(
+        DET_OBJ_NAME,
+        airsim.Pose(
+            airsim.Vector3r(pos[0],pos[1],pos[2]),
+            airsim.to_quaternion(np.deg2rad(random.randint(0,360)), np.deg2rad(random.randint(0,360)), np.deg2rad(random.randint(0,360)))
+        ),     
+        True
+        )
+
+def labels_format(points2D, parameters):
+    """
+    Constructs labels format.
+
+    Args:
+    - points2D: List of 2D points to be formatted.
+    - parameters: Dictionary containing camera parameters.
+
+    Returns:
+    - data: A formatted string containing the class item, normalized 2D points,
+            bounding box dimensions, and camera parameters.
+    """
+    class_item = 0
+    maxim = [float('-inf'), float('-inf')]
+    minim = [float('inf'), float('inf')]
+    imw = parameters['imw']
+    imh = parameters['imh']
+
+    data = "%d " % class_item
+
+    for point in points2D:
+        x, y = point
+        data += "%f %f " % (x/imw, y/imh)
+
+        for i in range(2):
+            maxim[i] = max(maxim[i], point[i])
+            minim[i] = min(minim[i], point[i])
+
+    # Calculate the width and height of the bounding box
+    w = maxim[0] - minim[0]
+    h = maxim[1] - minim[1]
+
+    data += "%f %f %f %f %d %d %f %f %d %d" % (
+        w / imw,
+        h / imh,
+        parameters['fx'],
+        parameters['fy'],
+        imw,
+        imh,
+        parameters['cx'],
+        parameters['cy'],
+        imw,
+        imh
+    )
+
+    return data
+
 def image_points(vertices, cam_mat):
+    """
+    Projects 3D vertices onto the image plane using camera matrix.
+
+    Args:
+    - vertices: List of 3D vertices.
+    - cam_mat: Camera intrinsic matrix.
+
+    Returns:
+    - vertices2D: List of 2D image points corresponding to the projection of 3D vertices.
+    """
     vertices2D = []
     for i in vertices:
         # Normalize the 3D coordinates
         vert = (i[0]/i[0], i[1]/i[0], i[2]/i[0])
+        # Project the normalized 3D point onto the image plane
         mult = np.dot(cam_mat, vert)
         # Store the 2D projection of the 3D points
-        vertices2D.append(np.array([mult[1], mult[2]]))
+        vertices2D.append((mult[1], mult[2]))
     
     return vertices2D
 
@@ -115,18 +323,28 @@ if __name__ == '__main__':
     image_type = airsim.ImageType.Scene
     
     # Set detection filter
-    client.simSetDetectionFilterRadius(camera_name, image_type, 200 * 100) 
-    client.simAddDetectionFilterMeshName(camera_name, image_type, DET_OBJ_NAME) 
+    client.simSetDetectionFilterRadius(camera_name, image_type, 200 * 100)
+    client.simAddDetectionFilterMeshName(camera_name, image_type, DET_OBJ_NAME)
 
-    ##### INITIAL DETECTION #####
-    client.simSetObjectPose(
-        DET_OBJ_NAME,
+    ## Create directory to save files
+    os.makedirs(directory_name, exist_ok=True)
+    os.makedirs(f'{directory_name}/labels', exist_ok=True)
+    os.makedirs(f'{directory_name}/JPEGImages', exist_ok=True)
+
+    ################ INITIAL DETECTION #################
+
+    initial_pose = airsim.Pose(
+        airsim.Vector3r(2.5,0,0),
+        airsim.to_quaternion(0,0,0)
+        )
+
+    client.simSetObjectPose(DET_OBJ_NAME, initial_pose, True)
+    client.simSetVehiclePose(
         airsim.Pose(
-            airsim.Vector3r(2.5,0,0),
-            airsim.to_quaternion(0,0,0)
-        ),
-        True
-    )
+            airsim.Vector3r(0,0,0), 
+            airsim.to_quaternion(0,0,0)), 
+            True)
+
     time.sleep(0.1)
 
     # Get image
@@ -154,12 +372,23 @@ if __name__ == '__main__':
                     detect.box3D.max.y_val, 
                     detect.box3D.max.z_val)
 
-            print(p_min, p_max)
             vertices = box_vertices(p_min, p_max) 
 
+    ################# GENERAL CODE #################
     # Get camera matrix
-    CM = camera_matrix(client, imw, imh, camera_name)
+    parameters = camera_parameters(client, camera_name, imw, imh)
+    CM =  [[1               , 0               , 0               ],
+           [parameters['cx'], parameters['fx'], parameters['s'] ],
+           [parameters['cy'], 0               , parameters['fy']]]
+    
+    # Define movement limits 
+    ranges = [
+        (2,5),
+        (-1.5,1.5),
+        (-1,1)
+        ]
 
+    cont = 0
     while True:
         # Get image
         rawImage = client.simGetImage(camera_name, image_type)
@@ -174,45 +403,46 @@ if __name__ == '__main__':
         veh_pose = client.simGetVehiclePose()
         obj_pose = client.simGetObjectPose(DET_OBJ_NAME)
 
-        # Get vehicle orientation
+        # Get vehicle orientation and position
         veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation) # PRY
-        veh_orientation = (-veh_orientation[0], -veh_orientation[1], -veh_orientation[2])
+        veh_orientation = (- veh_orientation[0] , - veh_orientation[1], - veh_orientation[2])
+        veh_position = [
+            veh_pose.position.x_val,
+            veh_pose.position.y_val,
+            veh_pose.position.z_val
+        ]
 
         # Get object orientation
         obj_orientation = airsim.utils.to_eularian_angles(obj_pose.orientation) # PRY
 
-        # Calculate translation vector between vehicle and object
+        # Calculate translation vector between initial position and object
         translation = [
-            veh_pose.position.x_val - obj_pose.position.x_val,
-            veh_pose.position.y_val - obj_pose.position.y_val,
-            veh_pose.position.z_val - obj_pose.position.z_val
+            obj_pose.position.x_val - initial_pose.position.x_val,
+            obj_pose.position.y_val - initial_pose.position.y_val,
+            obj_pose.position.z_val - initial_pose.position.z_val
         ]
 
-        # Calculate rotation and translation matrices
-        RM, TM = transformation_matrix(obj_orientation, translation)
+        # Calculate rotation and translation matrices 
+        RM1, TM1 = transformation_matrix(obj_orientation, translation, "OW")
 
         ## Apply rotation
-        # Center the cube (assuming origin as center)
-        center = [sum(v[i] for v in vertices) / len(vertices) for i in range(3)]
+        # Center the object (assuming origin as center)
+        center = vertices[0] 
 
         rot_vertices = []
         for vertex in vertices:
-            print("\nVertice: ", vertex)
             center_vertex = [v - center[i] for i, v in enumerate(vertex)]
-            print("Center Vertice: ", center_vertex)
-            rotated_vertex = np.dot(RM, center_vertex) + center
-            print("Rotated Vertice: ", rotated_vertex)
-            translated_vertex = TM - rotated_vertex + center
-            print("Translated Vertice: ", translated_vertex)
+            rotated_vertex = np.dot(RM1, center_vertex) + center
+            translated_vertex = rotated_vertex + TM1
 
             rot_vertices.append(translated_vertex)
 
-        RM, __ = transformation_matrix(veh_orientation,[0,0,0])
-        
-        # Apply vehicle rotation to the vertices
+        # Apply vehicle rotation and translation to the vertices
+        RM2, TM2 = transformation_matrix(veh_orientation, veh_position, "WC")
+
         transf_vertices = []
         for v in rot_vertices:
-            transf_vertices.append(np.dot(RM,v))
+            transf_vertices.append(np.dot(RM2,v-TM2))
 
         # Convert 3D vertices to 2D image points
         points2D = image_points(transf_vertices, CM)
@@ -221,7 +451,7 @@ if __name__ == '__main__':
         for point in points2D:
             points_list1.append([round(point[0]), round(point[1])])
         
-        ######### PRINT ##############
+        ############# PRINT ##############
         ## Points
         draw_bbox(png, points_list1, (255, 0, 0))
 
@@ -231,5 +461,23 @@ if __name__ == '__main__':
         ## Displaying the Image with Drawn Points
         cv2.imshow('Unreal',png)
         cv2.waitKey(1)
+        print(cont)
+
+        ########### SAVE FILES ##############
+        with open(f'{directory_name}/labels/{cont}.txt','w') as f:
+            data = labels_format(points2D, parameters)
+            f.write(data)
+        
+        cv2.imwrite(f'{directory_name}/JPEGImages/{cont}.png',png)
+
+        ########### CHANGE ONLY OBJECT POSE ##############
+        change_obj_pose(ranges)
+
+        ########### CHANGE CAMERA POSE ############
+        # change_cam_pose(client, cont, ranges)
+
+        time.sleep(0.1)
+        cont +=1
+
 
     cv2.destroyAllWindows()
