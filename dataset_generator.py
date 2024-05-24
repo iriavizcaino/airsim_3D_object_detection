@@ -7,15 +7,23 @@ import time
 import transforms3d
 import random
 import os
+import glob
 
 # Lambda functions to get width and height of an image
 get_width = lambda cv2_img : (cv2_img.shape[1])
 get_height = lambda cv2_img : (cv2_img.shape[0])
 
-# Define Object name
-DET_OBJ_NAME = 'Fire_Extinguisher'
+# Define Objects names
+DET_OBJ_NAME = 'Fire_Extinguisher_11'
 sphere_name = 'Inverted_Sphere'
-directory_name = 'Cube'
+directory_name = 'Fire_Extinguisher'
+
+# Define movement limits 
+ranges = [
+    (2,7),
+    (-1.5,1.5),
+    (-1,1)
+    ]
 
 def draw_bbox(image, points_list, color):
     """
@@ -163,7 +171,7 @@ def box_vertices(p_min, p_max):
 
     return vertices
  
-def change_obj_pose(ranges, veh_position):
+def change_obj_pose(veh_position):
     """
     Changes the pose (position and orientation) of an object within specified ranges.
 
@@ -195,7 +203,7 @@ def change_obj_pose(ranges, veh_position):
         True
     )
 
-def change_cam_pose(client, cont, ranges):
+def change_cam_pose(client, cont):
     """
     Changes the pose (orientation) of the camera and adjusts the position of an object relative to it.
 
@@ -219,9 +227,14 @@ def change_cam_pose(client, cont, ranges):
     ## Calculate object position from vehicle orientation 
     veh_pose = client.simGetVehiclePose()
     veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation)
+    veh_position = [
+        veh_pose.position.x_val,
+        veh_pose.position.y_val,
+        veh_pose.position.z_val
+    ]
 
     # Calculate transformation matrix
-    rm, tm = transformation_matrix(veh_orientation, veh_position, "OC")
+    rm, tm = transformation_matrix(veh_orientation, veh_position, "CO")
 
     # Generate random relative position for the object
     rel_pos = [
@@ -340,10 +353,12 @@ if __name__ == '__main__':
         initial_veh_pose, # in sphere center
         True
     )
+
+    # initial_veh_pose = airsim.Pose(
+    #             airsim.Vector3r(0,0,0), 
+    #             airsim.to_quaternion(0,0,0))
     # client.simSetVehiclePose(
-    #     airsim.Pose(
-    #         airsim.Vector3r(0,0,0), 
-    #         airsim.to_quaternion(0,0,0)), 
+    #         initial_veh_pose, 
     #         True)
 
     ## Set initial object pose 
@@ -353,7 +368,7 @@ if __name__ == '__main__':
         )
     client.simSetObjectPose(DET_OBJ_NAME, initial_pose, True)
 
-    time.sleep(0.1)
+    time.sleep(0.01)
 
     # Get image
     initialImage = client.simGetImage(camera_name, image_type)
@@ -371,7 +386,6 @@ if __name__ == '__main__':
     # Get initial detection
     if detects:
         for detect in detects:
-            print(detect)
             p_min = (detect.box3D.min.x_val, 
                     detect.box3D.min.y_val, 
                     detect.box3D.min.z_val)
@@ -388,13 +402,6 @@ if __name__ == '__main__':
     CM =  [[1               , 0               , 0               ],
            [parameters['cx'], parameters['fx'], parameters['s'] ],
            [parameters['cy'], 0               , parameters['fy']]]
-    
-    # Define movement limits 
-    ranges = [
-        (2,3),
-        (-1.5,1.5),
-        (-1,1)
-        ]
 
     cont = 0
     while True:
@@ -461,14 +468,14 @@ if __name__ == '__main__':
         
         ############# PRINT ##############
         ## Points
-        draw_bbox(png, points_list1, (255, 0, 0))
+        # draw_bbox(png, points_list1, (255, 0, 0))
 
         ## Legend
-        cv2.putText(png, "Vertices rotados", (100,70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
+        # cv2.putText(png, "Vertices rotados", (100,70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
 
         ## Displaying the Image with Drawn Points
-        cv2.imshow('Unreal',png)
-        cv2.waitKey(1)
+        # cv2.imshow('Unreal',png)
+        # cv2.waitKey(1)
         print(cont)
 
         ########### SAVE FILES ##############
@@ -478,13 +485,19 @@ if __name__ == '__main__':
         
         # cv2.imwrite(f'{directory_name}/JPEGImages/{cont}.png',png)
 
+        ## Change background
+        client.simSetObjectMaterialFromTexture(
+            sphere_name,
+            random.choice(glob.glob(os.getcwd() + '/backgrounds/*'))
+        )
+
         ########### CHANGE ONLY OBJECT POSE ##############
-        change_obj_pose(ranges, initial_veh_pose.position)
+        # change_obj_pose(initial_veh_pose.position)
 
         ########### CHANGE CAMERA POSE ############
-        # change_cam_pose(client, cont, ranges)
+        change_cam_pose(client, cont)
 
-        time.sleep(0.1)
+        time.sleep(0.01)
         cont +=1
 
 

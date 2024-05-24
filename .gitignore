@@ -3,3 +3,5 @@ quaternion.py
 c.py
 external_camera.py
 Cube
+*.exr
+Fire_Extinguisher
