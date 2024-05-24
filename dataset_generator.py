@@ -13,7 +13,8 @@ get_width = lambda cv2_img : (cv2_img.shape[1])
 get_height = lambda cv2_img : (cv2_img.shape[0])
 
 # Define Object name
-DET_OBJ_NAME = 'Cube_2'
+DET_OBJ_NAME = 'Fire_Extinguisher'
+sphere_name = 'Inverted_Sphere'
 directory_name = 'Cube'
 
 def draw_bbox(image, points_list, color):
@@ -162,7 +163,7 @@ def box_vertices(p_min, p_max):
 
     return vertices
  
-def change_obj_pose(ranges):
+def change_obj_pose(ranges, veh_position):
     """
     Changes the pose (position and orientation) of an object within specified ranges.
 
@@ -174,9 +175,9 @@ def change_obj_pose(ranges):
     """
     # Calculate new position within specified ranges
     new_pos = airsim.Vector3r(
-        random.uniform(ranges[0][0], ranges[0][1]),
-        random.uniform(ranges[1][0], ranges[1][1]),
-        random.uniform(ranges[2][0], ranges[2][1])
+        veh_position.x_val + random.uniform(ranges[0][0], ranges[0][1]),
+        veh_position.y_val + random.uniform(ranges[1][0], ranges[1][1]),
+        veh_position.z_val + random.uniform(ranges[2][0], ranges[2][1])
         )
 
     # Generate random orientation
@@ -312,17 +313,17 @@ def image_points(vertices, cam_mat):
     return vertices2D
 
 if __name__ == '__main__':
-    # Define client
+    ## Define client
     client = airsim.VehicleClient()
     client.confirmConnection()
 
-    # Camera name
+    ## Camera name
     camera_name = "0"
 
-    # Image type
+    ## Image type
     image_type = airsim.ImageType.Scene
     
-    # Set detection filter
+    ## Set detection filter
     client.simSetDetectionFilterRadius(camera_name, image_type, 200 * 100)
     client.simAddDetectionFilterMeshName(camera_name, image_type, DET_OBJ_NAME)
 
@@ -333,17 +334,24 @@ if __name__ == '__main__':
 
     ################ INITIAL DETECTION #################
 
+    ## Set vehicle pose in sphere center
+    initial_veh_pose = client.simGetObjectPose(sphere_name)
+    client.simSetVehiclePose(
+        initial_veh_pose, # in sphere center
+        True
+    )
+    # client.simSetVehiclePose(
+    #     airsim.Pose(
+    #         airsim.Vector3r(0,0,0), 
+    #         airsim.to_quaternion(0,0,0)), 
+    #         True)
+
+    ## Set initial object pose 
     initial_pose = airsim.Pose(
-        airsim.Vector3r(2.5,0,0),
+        airsim.Vector3r(2.5,0,0) + client.simGetVehiclePose().position,
         airsim.to_quaternion(0,0,0)
         )
-
     client.simSetObjectPose(DET_OBJ_NAME, initial_pose, True)
-    client.simSetVehiclePose(
-        airsim.Pose(
-            airsim.Vector3r(0,0,0), 
-            airsim.to_quaternion(0,0,0)), 
-            True)
 
     time.sleep(0.1)
 
@@ -383,7 +391,7 @@ if __name__ == '__main__':
     
     # Define movement limits 
     ranges = [
-        (2,5),
+        (2,3),
         (-1.5,1.5),
         (-1,1)
         ]
@@ -407,9 +415,9 @@ if __name__ == '__main__':
         veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation) # PRY
         veh_orientation = (- veh_orientation[0] , - veh_orientation[1], - veh_orientation[2])
         veh_position = [
-            veh_pose.position.x_val,
-            veh_pose.position.y_val,
-            veh_pose.position.z_val
+            veh_pose.position.x_val - initial_veh_pose.position.x_val,
+            veh_pose.position.y_val - initial_veh_pose.position.y_val,
+            veh_pose.position.z_val - initial_veh_pose.position.z_val
         ]
 
         # Get object orientation
@@ -432,8 +440,8 @@ if __name__ == '__main__':
         rot_vertices = []
         for vertex in vertices:
             center_vertex = [v - center[i] for i, v in enumerate(vertex)]
-            rotated_vertex = np.dot(RM1, center_vertex) + center
-            translated_vertex = rotated_vertex + TM1
+            rotated_vertex = np.dot(RM1, center_vertex) 
+            translated_vertex = rotated_vertex + TM1 + center
 
             rot_vertices.append(translated_vertex)
 
@@ -464,14 +472,14 @@ if __name__ == '__main__':
         print(cont)
 
         ########### SAVE FILES ##############
-        with open(f'{directory_name}/labels/{cont}.txt','w') as f:
-            data = labels_format(points2D, parameters)
-            f.write(data)
+        # with open(f'{directory_name}/labels/{cont}.txt','w') as f:
+        #     data = labels_format(points2D, parameters)
+        #     f.write(data)
         
-        cv2.imwrite(f'{directory_name}/JPEGImages/{cont}.png',png)
+        # cv2.imwrite(f'{directory_name}/JPEGImages/{cont}.png',png)
 
         ########### CHANGE ONLY OBJECT POSE ##############
-        change_obj_pose(ranges)
+        change_obj_pose(ranges, initial_veh_pose.position)
 
         ########### CHANGE CAMERA POSE ############
         # change_cam_pose(client, cont, ranges)
