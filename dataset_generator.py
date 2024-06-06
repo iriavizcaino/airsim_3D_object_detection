@@ -8,15 +8,17 @@ import transforms3d
 import random
 import os
 import glob
+import shutil
+from utils.create_data_splits import data_split
 
 # Lambda functions to get width and height of an image
 get_width = lambda cv2_img : (cv2_img.shape[1])
 get_height = lambda cv2_img : (cv2_img.shape[0])
 
 # Define Objects names
-DET_OBJ_NAME = 'Fire_Extinguisher_11'
+DET_OBJ_NAME = 'excavator2_11'
 sphere_name = 'Inverted_Sphere'
-directory_name = 'Fire_Extinguisher'
+directory_name = 'Excavator'
 
 # Define movement limits 
 ranges = [
@@ -95,14 +97,14 @@ def camera_parameters(client, camera_name, imw, imh):
 
     return parameters
 
-def transformation_matrix(angles,position,opcion):
+def transformation_matrix(angles,position,opt):
     """
     Constructs transformation matrix.
 
     Args:
     - angles: List containing pitch, roll, and yaw angles (PRY) in radians.
     - position: List containing x, y, and z position coordinates.
-    - opcion: String indicating the orientation convention ("OW" for object-to-world, "WC" for world-to-camera, "CO" for camera-to-object).
+    - opt: String indicating the orientation convention ("OW" for object-to-world, "WC" for world-to-camera, "CO" for camera-to-object).
 
     Returns:
     - rot_mat: Rotation matrix corresponding to the orientation.
@@ -112,20 +114,20 @@ def transformation_matrix(angles,position,opcion):
     [b,y,a] = angles #PRY
 
     # Rotation matrix
-    if opcion == "OW":  #ZYX
+    if opt == "OW":  #ZYX
         rot_mat = [
             [np.cos(a)*np.cos(b),  np.cos(a)*np.sin(b)*np.sin(y)-np.sin(a)*np.cos(y),  np.cos(a)*np.sin(b)*np.cos(y)+np.sin(a)*np.sin(y)],
             [np.sin(a)*np.cos(b),  np.sin(a)*np.sin(b)*np.sin(y)+np.cos(a)*np.cos(y),  np.sin(a)*np.sin(b)*np.cos(y)-np.cos(a)*np.sin(y)],
             [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              ],
         ]
 
-    elif opcion == "WC":    #XYZ
+    elif opt == "WC":    #XYZ
         rot_mat = [
             [np.cos(b)*np.cos(a)                              , -np.cos(b)*np.sin(a)                              ,  np.sin(b)          ],
             [np.cos(y)*np.sin(a)+np.sin(y)*np.sin(b)*np.cos(a),  np.cos(y)*np.cos(a)-np.sin(y)*np.sin(b)*np.sin(a), -np.sin(y)*np.cos(b)],
             [np.sin(y)*np.sin(a)-np.cos(y)*np.sin(b)*np.cos(a),  np.sin(y)*np.cos(a)+np.cos(y)*np.sin(b)*np.sin(a),  np.cos(y)*np.cos(b)],
         ]
-    elif opcion == "CO":
+    elif opt == "CO":
         rot_mat = [
             [ np.cos(a) * np.cos(b) * np.cos(y) - np.sin(a) * np.sin(y),     -np.cos(a) * np.cos(b) * np.sin(y) - np.sin(a) * np.cos(y),     np.cos(a) * np.sin(b)],
             [ np.sin(a) * np.cos(b) * np.cos(y) + np.cos(a) * np.sin(y),     -np.sin(a) * np.cos(b) * np.sin(y) + np.cos(a) * np.cos(y),     np.sin(a) * np.sin(b)],
@@ -171,37 +173,18 @@ def box_vertices(p_min, p_max):
 
     return vertices
  
-def change_obj_pose(veh_position):
-    """
-    Changes the pose (position and orientation) of an object within specified ranges.
+def rotate_object(client, degree, axis):
 
-    Args:
-    - ranges: List of ranges for x, y, and z displacements.
+    curr_pos = client.simGetObjectPose(DET_OBJ_NAME).position
 
-    Returns:
-    None
-    """
-    # Calculate new position within specified ranges
-    new_pos = airsim.Vector3r(
-        veh_position.x_val + random.uniform(ranges[0][0], ranges[0][1]),
-        veh_position.y_val + random.uniform(ranges[1][0], ranges[1][1]),
-        veh_position.z_val + random.uniform(ranges[2][0], ranges[2][1])
-        )
+    if axis == 'y':
+        new_orient = airsim.to_quaternion(np.deg2rad(degree), 0, 0)  
+    elif axis == 'z':
+        new_orient = airsim.to_quaternion(0, 0, np.deg2rad(degree))  
+    
+    client.simSetObjectPose(DET_OBJ_NAME, airsim.Pose(curr_pos, new_orient), True)
 
-    # Generate random orientation
-    new_orient = airsim.to_quaternion(
-        np.deg2rad(random.randint(0,360)),
-        np.deg2rad(random.randint(0,360)),
-        np.deg2rad(random.randint(0,360))
-    )
-
-    # Set new object pose in the simulation
-    client.simSetObjectPose(
-        DET_OBJ_NAME,
-        airsim.Pose(new_pos, new_orient),    # Random position and orientation
-        # airsim.Pose(curr_pos, new_orient), # Random orientation
-        True
-    )
+    
 
 def change_cam_pose(client, cont):
     """
@@ -210,7 +193,6 @@ def change_cam_pose(client, cont):
     Args:
     - client: The client object used for communication with the simulator.
     - cont: Control parameter for adjusting the camera orientation.
-    - ranges: List of ranges for x, y, and z relative displacements of the object.
 
     Returns:
     None
@@ -251,7 +233,7 @@ def change_cam_pose(client, cont):
         DET_OBJ_NAME,
         airsim.Pose(
             airsim.Vector3r(pos[0],pos[1],pos[2]),
-            airsim.to_quaternion(np.deg2rad(random.randint(0,360)), np.deg2rad(random.randint(0,360)), np.deg2rad(random.randint(0,360)))
+            airsim.to_quaternion(np.deg2rad(random.randint(-90,90)), np.deg2rad(random.randint(0,360)), np.deg2rad(random.randint(0,360))) #PRY
         ),     
         True
         )
@@ -325,6 +307,87 @@ def image_points(vertices, cam_mat):
     
     return vertices2D
 
+def save_files(data, png, cont):
+    with open(f'{directory_name}/labels/{cont}.txt','w') as f:
+        f.write(data)
+    
+    cv2.imwrite(f'{directory_name}/JPEGImages/{cont}.png',png)
+
+def show_image(points2D, png):
+    points_list1 = []
+    for point in points2D:
+        points_list1.append([round(point[0]), round(point[1])])
+
+    # Points
+    draw_bbox(png, points_list1, (255, 0, 0))
+
+    # Legend
+    cv2.putText(png, "Vertices rotados", (100,70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
+
+    # Displaying the Image with Drawn Points
+    cv2.imshow('Unreal',png)
+    cv2.waitKey(1)
+
+def get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices):
+    # Get image
+    rawImage = client.simGetImage(camera_name, image_type)
+    if not rawImage:
+        print("No Image")
+        exit()
+
+    # Decode image
+    png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
+
+    # Get poses
+    veh_pose = client.simGetVehiclePose()
+    obj_pose = client.simGetObjectPose(DET_OBJ_NAME)
+
+    # Get vehicle orientation and position
+    veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation) # PRY
+    veh_orientation = (- veh_orientation[0] , - veh_orientation[1], - veh_orientation[2])
+    veh_position = [
+        veh_pose.position.x_val - initial_veh_pose.position.x_val,
+        veh_pose.position.y_val - initial_veh_pose.position.y_val,
+        veh_pose.position.z_val - initial_veh_pose.position.z_val
+    ]
+
+    # Get object orientation
+    obj_orientation = airsim.utils.to_eularian_angles(obj_pose.orientation) # PRY
+
+    # Calculate translation vector between initial position and object
+    translation = [
+        obj_pose.position.x_val - initial_pose.position.x_val,
+        obj_pose.position.y_val - initial_pose.position.y_val,
+        obj_pose.position.z_val - initial_pose.position.z_val
+    ]
+
+    # Calculate rotation and translation matrices 
+    RM1, TM1 = transformation_matrix(obj_orientation, translation, "OW")
+
+    ## Apply rotation
+    # Center the object (assuming origin as center)
+    center = vertices[0] 
+
+    rot_vertices = []
+    for vertex in vertices:
+        center_vertex = [v - center[i] for i, v in enumerate(vertex)]
+        rotated_vertex = np.dot(RM1, center_vertex) 
+        translated_vertex = rotated_vertex + TM1 + center
+
+        rot_vertices.append(translated_vertex)
+
+    # Apply vehicle rotation and translation to the vertices
+    RM2, TM2 = transformation_matrix(veh_orientation, veh_position, "WC")
+
+    transf_vertices = []
+    for v in rot_vertices:
+        transf_vertices.append(np.dot(RM2,v-TM2))
+
+    # Convert 3D vertices to 2D image points
+    points2D = image_points(transf_vertices, CM)
+
+    return png, points2D
+
 if __name__ == '__main__':
     ## Define client
     client = airsim.VehicleClient()
@@ -341,9 +404,15 @@ if __name__ == '__main__':
     client.simAddDetectionFilterMeshName(camera_name, image_type, DET_OBJ_NAME)
 
     ## Create directory to save files
-    os.makedirs(directory_name, exist_ok=True)
-    os.makedirs(f'{directory_name}/labels', exist_ok=True)
-    os.makedirs(f'{directory_name}/JPEGImages', exist_ok=True)
+    try:
+        os.mkdir(directory_name)
+        os.mkdir(f'{directory_name}/labels')
+        os.mkdir(f'{directory_name}/JPEGImages')
+    except:
+        shutil.rmtree(directory_name)
+        os.mkdir(directory_name)
+        os.mkdir(f'{directory_name}/labels')
+        os.mkdir(f'{directory_name}/JPEGImages')
 
     ################ INITIAL DETECTION #################
 
@@ -364,11 +433,11 @@ if __name__ == '__main__':
     ## Set initial object pose 
     initial_pose = airsim.Pose(
         airsim.Vector3r(2.5,0,0) + client.simGetVehiclePose().position,
-        airsim.to_quaternion(0,0,0)
+        airsim.to_quaternion(0,0,np.deg2rad(180))
         )
     client.simSetObjectPose(DET_OBJ_NAME, initial_pose, True)
 
-    time.sleep(0.01)
+    time.sleep(0.1)
 
     # Get image
     initialImage = client.simGetImage(camera_name, image_type)
@@ -397,108 +466,53 @@ if __name__ == '__main__':
             vertices = box_vertices(p_min, p_max) 
 
     ################# GENERAL CODE #################
+    cont = 0
     # Get camera matrix
     parameters = camera_parameters(client, camera_name, imw, imh)
     CM =  [[1               , 0               , 0               ],
            [parameters['cx'], parameters['fx'], parameters['s'] ],
            [parameters['cy'], 0               , parameters['fy']]]
 
-    cont = 0
-    while True:
-        # Get image
-        rawImage = client.simGetImage(camera_name, image_type)
-        if not rawImage:
-            print("No Image")
-            exit()
+    try:
+        ########### OBJECT RECOGNITION ##############
+        for degree in range(0,360,20):
+            rotate_object(client, degree, 'y')
+            png, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+            # data = labels_format(points2D, parameters)
+            # save_files(data, png, cont)
+            show_image(points2D, png)
+            cont+=1
 
-        # Decode image
-        png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
+        for degree in range(0,360,20):
+            rotate_object(client, degree, 'z')
+            png, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+            # data = labels_format(points2D, parameters)
+            # save_files(data, png, cont)
+            show_image(points2D, png)
+            cont+=1
 
-        # Get poses
-        veh_pose = client.simGetVehiclePose()
-        obj_pose = client.simGetObjectPose(DET_OBJ_NAME)
+        while True:
+            # Change background
+            client.simSetObjectMaterialFromTexture(
+                sphere_name,
+                random.choice(glob.glob(os.getcwd() + '/backgrounds/*'))
+            )
 
-        # Get vehicle orientation and position
-        veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation) # PRY
-        veh_orientation = (- veh_orientation[0] , - veh_orientation[1], - veh_orientation[2])
-        veh_position = [
-            veh_pose.position.x_val - initial_veh_pose.position.x_val,
-            veh_pose.position.y_val - initial_veh_pose.position.y_val,
-            veh_pose.position.z_val - initial_veh_pose.position.z_val
-        ]
+            ########### CHANGE CAMERA POSE ############
+            change_cam_pose(client, cont)
+            png, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+    
+            ############# PRINT ##############
+            show_image(points2D, png)
+            print(cont)
 
-        # Get object orientation
-        obj_orientation = airsim.utils.to_eularian_angles(obj_pose.orientation) # PRY
+            ########### SAVE FILES ##############
+            # data = labels_format(points2D, parameters)
+            # save_files(data, png, cont)
 
-        # Calculate translation vector between initial position and object
-        translation = [
-            obj_pose.position.x_val - initial_pose.position.x_val,
-            obj_pose.position.y_val - initial_pose.position.y_val,
-            obj_pose.position.z_val - initial_pose.position.z_val
-        ]
-
-        # Calculate rotation and translation matrices 
-        RM1, TM1 = transformation_matrix(obj_orientation, translation, "OW")
-
-        ## Apply rotation
-        # Center the object (assuming origin as center)
-        center = vertices[0] 
-
-        rot_vertices = []
-        for vertex in vertices:
-            center_vertex = [v - center[i] for i, v in enumerate(vertex)]
-            rotated_vertex = np.dot(RM1, center_vertex) 
-            translated_vertex = rotated_vertex + TM1 + center
-
-            rot_vertices.append(translated_vertex)
-
-        # Apply vehicle rotation and translation to the vertices
-        RM2, TM2 = transformation_matrix(veh_orientation, veh_position, "WC")
-
-        transf_vertices = []
-        for v in rot_vertices:
-            transf_vertices.append(np.dot(RM2,v-TM2))
-
-        # Convert 3D vertices to 2D image points
-        points2D = image_points(transf_vertices, CM)
-
-        points_list1 = []
-        for point in points2D:
-            points_list1.append([round(point[0]), round(point[1])])
-        
-        ############# PRINT ##############
-        ## Points
-        # draw_bbox(png, points_list1, (255, 0, 0))
-
-        ## Legend
-        # cv2.putText(png, "Vertices rotados", (100,70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
-
-        ## Displaying the Image with Drawn Points
-        # cv2.imshow('Unreal',png)
-        # cv2.waitKey(1)
-        print(cont)
-
-        ########### SAVE FILES ##############
-        # with open(f'{directory_name}/labels/{cont}.txt','w') as f:
-        #     data = labels_format(points2D, parameters)
-        #     f.write(data)
-        
-        # cv2.imwrite(f'{directory_name}/JPEGImages/{cont}.png',png)
-
-        ## Change background
-        client.simSetObjectMaterialFromTexture(
-            sphere_name,
-            random.choice(glob.glob(os.getcwd() + '/backgrounds/*'))
-        )
-
-        ########### CHANGE ONLY OBJECT POSE ##############
-        # change_obj_pose(initial_veh_pose.position)
-
-        ########### CHANGE CAMERA POSE ############
-        change_cam_pose(client, cont)
-
-        time.sleep(0.01)
-        cont +=1
-
-
-    cv2.destroyAllWindows()
+            time.sleep(0.01)
+            cont +=1
+            
+        cv2.destroyAllWindows()
+    except KeyboardInterrupt:
+        data_split(os.getcwd() + f"/{directory_name}" )
