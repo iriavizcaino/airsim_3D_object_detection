@@ -16,13 +16,14 @@ get_width = lambda cv2_img : (cv2_img.shape[1])
 get_height = lambda cv2_img : (cv2_img.shape[0])
 
 # Define Objects names
-DET_OBJ_NAME = 'excavator2_11'
+DET_OBJ_NAME = 'excavator_2'
 sphere_name = 'Inverted_Sphere'
 directory_name = 'Excavator'
+light_name = 'LightSource'
 
 # Define movement limits 
 ranges = [
-    (2,7),
+    (1.5,6),
     (-1.5,1.5),
     (-1,1)
     ]
@@ -205,9 +206,15 @@ def change_cam_pose(client, cont):
         ),
         True
     )
+    veh_pose = client.simGetVehiclePose()
+    # Adjust Light
+    client.simSetObjectPose(
+        light_name,
+        veh_pose,
+        True
+    )
 
     ## Calculate object position from vehicle orientation 
-    veh_pose = client.simGetVehiclePose()
     veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation)
     veh_position = [
         veh_pose.position.x_val,
@@ -233,7 +240,7 @@ def change_cam_pose(client, cont):
         DET_OBJ_NAME,
         airsim.Pose(
             airsim.Vector3r(pos[0],pos[1],pos[2]),
-            airsim.to_quaternion(np.deg2rad(random.randint(-90,90)), np.deg2rad(random.randint(0,360)), np.deg2rad(random.randint(0,360))) #PRY
+            airsim.to_quaternion(np.deg2rad(random.randint(-90,90)), np.deg2rad(random.randint(-180,180)), np.deg2rad(random.randint(-180,180))) #PRY
         ),     
         True
         )
@@ -285,6 +292,21 @@ def labels_format(points2D, parameters):
 
     return data
 
+def camera_json(CM):
+    data = "{\"distortion\": \"None\", \"intrinsic\": [[%f,%f,%f],[%f,%f,%f],[%f,%f,%f]]}" % (
+        CM[1][1],
+        CM[1][2],
+        CM[1][0],
+        CM[2][1],
+        CM[2][2],
+        CM[2][0],
+        CM[0][1],
+        CM[0][2],
+        CM[0][0]
+    )
+    with open(f'{directory_name}/camera.json','w') as f:
+        f.write(data)
+
 def image_points(vertices, cam_mat):
     """
     Projects 3D vertices onto the image plane using camera matrix.
@@ -307,11 +329,12 @@ def image_points(vertices, cam_mat):
     
     return vertices2D
 
-def save_files(data, png, cont):
+def save_files(data, png, mask, cont):
     with open(f'{directory_name}/labels/{cont}.txt','w') as f:
         f.write(data)
     
     cv2.imwrite(f'{directory_name}/JPEGImages/{cont}.png',png)
+    cv2.imwrite(f'{directory_name}/mask/{cont}.png',mask)
 
 def show_image(points2D, png):
     points_list1 = []
@@ -330,13 +353,19 @@ def show_image(points2D, png):
 
 def get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices):
     # Get image
-    rawImage = client.simGetImage(camera_name, image_type)
+    rawImage = client.simGetImage(camera_name, image_type['scene'])
+    maskImage = client.simGetImage(camera_name, image_type['mask'])
     if not rawImage:
         print("No Image")
         exit()
 
     # Decode image
     png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
+    
+    mask = cv2.imdecode(airsim.string_to_uint8_array(maskImage), cv2.IMREAD_UNCHANGED)
+    r,g,b,a = cv2.split(mask)
+    _, maks = cv2.threshold(r,127,255,cv2.THRESH_BINARY)
+    mask = cv2.bitwise_not(maks)
 
     # Get poses
     veh_pose = client.simGetVehiclePose()
@@ -386,7 +415,7 @@ def get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, i
     # Convert 3D vertices to 2D image points
     points2D = image_points(transf_vertices, CM)
 
-    return png, points2D
+    return png, mask, points2D
 
 if __name__ == '__main__':
     ## Define client
@@ -397,22 +426,27 @@ if __name__ == '__main__':
     camera_name = "0"
 
     ## Image type
-    image_type = airsim.ImageType.Scene
+    image_type = {
+        'scene' : airsim.ImageType.Scene,
+        'mask' : airsim.ImageType.DepthPerspective
+    }
     
     ## Set detection filter
-    client.simSetDetectionFilterRadius(camera_name, image_type, 200 * 100)
-    client.simAddDetectionFilterMeshName(camera_name, image_type, DET_OBJ_NAME)
+    client.simSetDetectionFilterRadius(camera_name, image_type['scene'], 200 * 100)
+    client.simAddDetectionFilterMeshName(camera_name, image_type['scene'], DET_OBJ_NAME)
 
     ## Create directory to save files
     try:
         os.mkdir(directory_name)
         os.mkdir(f'{directory_name}/labels')
         os.mkdir(f'{directory_name}/JPEGImages')
+        os.mkdir(f'{directory_name}/mask')
     except:
         shutil.rmtree(directory_name)
         os.mkdir(directory_name)
         os.mkdir(f'{directory_name}/labels')
         os.mkdir(f'{directory_name}/JPEGImages')
+        os.mkdir(f'{directory_name}/mask')
 
     ################ INITIAL DETECTION #################
 
@@ -423,12 +457,8 @@ if __name__ == '__main__':
         True
     )
 
-    # initial_veh_pose = airsim.Pose(
-    #             airsim.Vector3r(0,0,0), 
-    #             airsim.to_quaternion(0,0,0))
-    # client.simSetVehiclePose(
-    #         initial_veh_pose, 
-    #         True)
+    ## Set light pose
+    client.simSetObjectPose(light_name, initial_veh_pose)
 
     ## Set initial object pose 
     initial_pose = airsim.Pose(
@@ -440,14 +470,14 @@ if __name__ == '__main__':
     time.sleep(0.1)
 
     # Get image
-    initialImage = client.simGetImage(camera_name, image_type)
+    initialImage = client.simGetImage(camera_name, image_type['scene'])
     if not initialImage:
         print("No Initial Image")
         exit()
 
     # Decode image
     ipng = cv2.imdecode(airsim.string_to_uint8_array(initialImage), cv2.IMREAD_UNCHANGED)
-    detects = client.simGetDetections(camera_name, image_type)  
+    detects = client.simGetDetections(camera_name, image_type['scene'])  
 
     imw = get_width(ipng)
     imh = get_height(ipng)      
@@ -473,25 +503,31 @@ if __name__ == '__main__':
            [parameters['cx'], parameters['fx'], parameters['s'] ],
            [parameters['cy'], 0               , parameters['fy']]]
 
+    # Save camera.json
+    camera_json(CM)
+
     try:
         ########### OBJECT RECOGNITION ##############
         for degree in range(0,360,20):
+            print(cont)
             rotate_object(client, degree, 'y')
-            png, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
-            # data = labels_format(points2D, parameters)
-            # save_files(data, png, cont)
-            show_image(points2D, png)
+            png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+            data = labels_format(points2D, parameters)
+            save_files(data, png, mask, cont)
+            # show_image(points2D, png)
             cont+=1
 
         for degree in range(0,360,20):
+            print(cont)
             rotate_object(client, degree, 'z')
-            png, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
-            # data = labels_format(points2D, parameters)
-            # save_files(data, png, cont)
-            show_image(points2D, png)
+            png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+            data = labels_format(points2D, parameters)
+            save_files(data, png, mask, cont)
+            # show_image(points2D, png)
             cont+=1
 
         while True:
+            print(cont)
             # Change background
             client.simSetObjectMaterialFromTexture(
                 sphere_name,
@@ -500,17 +536,16 @@ if __name__ == '__main__':
 
             ########### CHANGE CAMERA POSE ############
             change_cam_pose(client, cont)
-            png, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+            png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
     
             ############# PRINT ##############
-            show_image(points2D, png)
-            print(cont)
+            # show_image(points2D, png)
 
             ########### SAVE FILES ##############
-            # data = labels_format(points2D, parameters)
-            # save_files(data, png, cont)
+            data = labels_format(points2D, parameters)
+            save_files(data, png, mask, cont)
 
-            time.sleep(0.01)
+            time.sleep(0.1)
             cont +=1
             
         cv2.destroyAllWindows()
