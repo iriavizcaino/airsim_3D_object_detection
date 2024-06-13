@@ -98,7 +98,7 @@ def camera_parameters(client, camera_name, imw, imh):
 
     return parameters
 
-def transformation_matrix(angles,position,opt):
+def transformation_matrix(angles, position, opt):
     """
     Constructs transformation matrix.
 
@@ -175,14 +175,27 @@ def box_vertices(p_min, p_max):
     return vertices
  
 def rotate_object(client, degree, axis):
+    """
+    Rotates the specified object in the simulator by a given degree around the specified axis.
 
+    Args:
+    - client: The client object used for communication with the simulator.
+    - degree: Degree by which to rotate the object.
+    - axis: Axis around which to rotate ('y' or 'z').
+
+    Returns:
+    None
+    """
+    # Get current object position
     curr_pos = client.simGetObjectPose(DET_OBJ_NAME).position
 
+    # Determine the new orientation based on the axis
     if axis == 'y':
         new_orient = airsim.to_quaternion(np.deg2rad(degree), 0, 0)  
     elif axis == 'z':
         new_orient = airsim.to_quaternion(0, 0, np.deg2rad(degree))  
     
+    # Set the new pose for the object
     client.simSetObjectPose(DET_OBJ_NAME, airsim.Pose(curr_pos, new_orient), True)
 
     
@@ -207,6 +220,7 @@ def change_cam_pose(client, cont):
         True
     )
     veh_pose = client.simGetVehiclePose()
+
     # Adjust Light
     client.simSetObjectPose(
         light_name,
@@ -214,7 +228,7 @@ def change_cam_pose(client, cont):
         True
     )
 
-    ## Calculate object position from vehicle orientation 
+    ## Calculate object position from vehicle orientation ##
     veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation)
     veh_position = [
         veh_pose.position.x_val,
@@ -243,7 +257,7 @@ def change_cam_pose(client, cont):
             airsim.to_quaternion(np.deg2rad(random.randint(-90,90)), np.deg2rad(random.randint(-180,180)), np.deg2rad(random.randint(-180,180))) #PRY
         ),     
         True
-        )
+    )
 
 def labels_format(points2D, parameters):
     """
@@ -293,6 +307,15 @@ def labels_format(points2D, parameters):
     return data
 
 def camera_json(CM):
+    """
+    Creates a JSON file with camera parameters.
+
+    Args:
+    - CM: Camera matrix.
+
+    Returns:
+    None
+    """
     data = "{\"distortion\": \"None\", \"intrinsic\": [[%f,%f,%f],[%f,%f,%f],[%f,%f,%f]]}" % (
         CM[1][1],
         CM[1][2],
@@ -316,7 +339,7 @@ def image_points(vertices, cam_mat):
     - cam_mat: Camera intrinsic matrix.
 
     Returns:
-    - vertices2D: List of 2D image points corresponding to the projection of 3D vertices.
+    - vertices2D: List of 2D image points corresponding to the projection of 3D vertices
     """
     vertices2D = []
     for i in vertices:
@@ -330,6 +353,18 @@ def image_points(vertices, cam_mat):
     return vertices2D
 
 def save_files(data, png, mask, cont):
+    """
+    Saves image and mask files along with their labels
+
+    Args:
+    - data: Formatted label data
+    - png: Image data
+    - mask: Mask data
+    - cont: Counter for file name
+
+    Returns:
+    None
+    """
     with open(f'{directory_name}/labels/{cont}.txt','w') as f:
         f.write(data)
     
@@ -337,6 +372,16 @@ def save_files(data, png, mask, cont):
     cv2.imwrite(f'{directory_name}/mask/{cont}.png',mask)
 
 def show_image(points2D, png):
+    """
+    Displays an image with drawn bounding box and labels
+
+    Args:
+    - points2D: List of 2D points to be drawn
+    - png: Image data
+
+    Returns:
+    None
+    """
     points_list1 = []
     for point in points2D:
         points_list1.append([round(point[0]), round(point[1])])
@@ -352,6 +397,23 @@ def show_image(points2D, png):
     cv2.waitKey(1)
 
 def get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices):
+    """
+    Captures images and mask from the simulator, processes them and returns 2D points on the image plane
+
+    Args:
+    - client: The client object used for communication with the simulator
+    - camera_name: Name of the camera
+    - image_type: Dictionary specifying image types (scene and mask)
+    - CM: Camera matrix
+    - initial_veh_pose: Initial pose of the vehicle
+    - initial_pose: Initial pose of the object
+    - vertices: List of 3D vertices
+
+    Returns:
+    - png: Image data
+    - mask: Mask data
+    - points2D: List of 2D points on the image plane
+    """
     # Get image
     rawImage = client.simGetImage(camera_name, image_type['scene'])
     maskImage = client.simGetImage(camera_name, image_type['mask'])
@@ -362,10 +424,8 @@ def get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, i
     # Decode image
     png = cv2.imdecode(airsim.string_to_uint8_array(rawImage), cv2.IMREAD_UNCHANGED)
     
-    mask = cv2.imdecode(airsim.string_to_uint8_array(maskImage), cv2.IMREAD_UNCHANGED)
-    r,g,b,a = cv2.split(mask)
-    _, maks = cv2.threshold(r,127,255,cv2.THRESH_BINARY)
-    mask = cv2.bitwise_not(maks)
+    mask = cv2.imdecode(airsim.string_to_uint8_array(maskImage), cv2.IMREAD_GRAYSCALE)
+    _, mask = cv2.threshold(mask,120,255,cv2.THRESH_BINARY_INV)
 
     # Get poses
     veh_pose = client.simGetVehiclePose()
@@ -393,7 +453,7 @@ def get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, i
     # Calculate rotation and translation matrices 
     RM1, TM1 = transformation_matrix(obj_orientation, translation, "OW")
 
-    ## Apply rotation
+    ## Apply rotation ## 
     # Center the object (assuming origin as center)
     center = vertices[0] 
 
@@ -418,24 +478,25 @@ def get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, i
     return png, mask, points2D
 
 if __name__ == '__main__':
-    ## Define client
+    ############ CONFIGURATION #############
+    # Define client
     client = airsim.VehicleClient()
     client.confirmConnection()
 
-    ## Camera name
+    # Camera name
     camera_name = "0"
 
-    ## Image type
+    # Image type
     image_type = {
         'scene' : airsim.ImageType.Scene,
-        'mask' : airsim.ImageType.DepthPerspective
+        'mask' : airsim.ImageType.Segmentation
     }
     
-    ## Set detection filter
+    # Set detection filter
     client.simSetDetectionFilterRadius(camera_name, image_type['scene'], 200 * 100)
     client.simAddDetectionFilterMeshName(camera_name, image_type['scene'], DET_OBJ_NAME)
 
-    ## Create directory to save files
+    # Create directory to save files
     try:
         os.mkdir(directory_name)
         os.mkdir(f'{directory_name}/labels')
@@ -450,17 +511,17 @@ if __name__ == '__main__':
 
     ################ INITIAL DETECTION #################
 
-    ## Set vehicle pose in sphere center
+    # Set vehicle pose in sphere center
     initial_veh_pose = client.simGetObjectPose(sphere_name)
     client.simSetVehiclePose(
         initial_veh_pose, # in sphere center
         True
     )
 
-    ## Set light pose
+    # Set light pose
     client.simSetObjectPose(light_name, initial_veh_pose)
 
-    ## Set initial object pose 
+    # Set initial object pose 
     initial_pose = airsim.Pose(
         airsim.Vector3r(2.5,0,0) + client.simGetVehiclePose().position,
         airsim.to_quaternion(0,0,np.deg2rad(180))
@@ -469,7 +530,7 @@ if __name__ == '__main__':
 
     time.sleep(0.1)
 
-    # Get image
+    # Get initial image
     initialImage = client.simGetImage(camera_name, image_type['scene'])
     if not initialImage:
         print("No Initial Image")
@@ -526,6 +587,7 @@ if __name__ == '__main__':
             # show_image(points2D, png)
             cont+=1
 
+        ############## -- ################
         while True:
             print(cont)
             # Change background
@@ -534,18 +596,18 @@ if __name__ == '__main__':
                 random.choice(glob.glob(os.getcwd() + '/backgrounds/*'))
             )
 
-            ########### CHANGE CAMERA POSE ############
+            # Change camera pose
             change_cam_pose(client, cont)
             png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
     
-            ############# PRINT ##############
+            ## Display image 
             # show_image(points2D, png)
 
-            ########### SAVE FILES ##############
+            # Save files
             data = labels_format(points2D, parameters)
             save_files(data, png, mask, cont)
 
-            time.sleep(0.1)
+            time.sleep(0.01)
             cont +=1
             
         cv2.destroyAllWindows()
