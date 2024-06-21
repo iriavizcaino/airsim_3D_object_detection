@@ -20,6 +20,7 @@ DET_OBJ_NAME = 'excavator_2'
 sphere_name = 'Inverted_Sphere'
 directory_name = 'Excavator'
 light_name = 'LightSource'
+initial_dist = 2.5
 
 # Define movement limits 
 ranges = [
@@ -122,7 +123,7 @@ def transformation_matrix(angles, position, opt):
             [-np.sin(b),           np.cos(b)*np.sin(y),                                np.cos(b)*np.cos(y)                              ],
         ]
 
-    elif opt == "WC":    #XYZ
+    elif opt == "WC" :    #XYZ
         rot_mat = [
             [np.cos(b)*np.cos(a)                              , -np.cos(b)*np.sin(a)                              ,  np.sin(b)          ],
             [np.cos(y)*np.sin(a)+np.sin(y)*np.sin(b)*np.cos(a),  np.cos(y)*np.cos(a)-np.sin(y)*np.sin(b)*np.sin(a), -np.sin(y)*np.cos(b)],
@@ -434,10 +435,17 @@ def get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, i
     # Get vehicle orientation and position
     veh_orientation = airsim.utils.to_eularian_angles(veh_pose.orientation) # PRY
     veh_orientation = (- veh_orientation[0] , - veh_orientation[1], - veh_orientation[2])
+    ######### Data Collection ############
+    # veh_position = [
+    #     veh_pose.position.x_val - initial_veh_pose.position.x_val,
+    #     veh_pose.position.y_val - initial_veh_pose.position.y_val,
+    #     veh_pose.position.z_val - initial_veh_pose.position.z_val
+    # ]
+    ######### TEST COLLECTION ##############3
     veh_position = [
-        veh_pose.position.x_val - initial_veh_pose.position.x_val,
-        veh_pose.position.y_val - initial_veh_pose.position.y_val,
-        veh_pose.position.z_val - initial_veh_pose.position.z_val
+        - veh_pose.position.x_val + initial_veh_pose.position.x_val,
+        - veh_pose.position.y_val + initial_veh_pose.position.y_val,
+        - veh_pose.position.z_val + initial_veh_pose.position.z_val
     ]
 
     # Get object orientation
@@ -497,17 +505,15 @@ if __name__ == '__main__':
     client.simAddDetectionFilterMeshName(camera_name, image_type['scene'], DET_OBJ_NAME)
 
     # Create directory to save files
-    try:
-        os.mkdir(directory_name)
-        os.mkdir(f'{directory_name}/labels')
-        os.mkdir(f'{directory_name}/JPEGImages')
-        os.mkdir(f'{directory_name}/mask')
-    except:
-        shutil.rmtree(directory_name)
-        os.mkdir(directory_name)
-        os.mkdir(f'{directory_name}/labels')
-        os.mkdir(f'{directory_name}/JPEGImages')
-        os.mkdir(f'{directory_name}/mask')
+    base_directory_name = directory_name 
+    counter = 2
+    while os.path.exists(directory_name):
+        directory_name = f"{base_directory_name}{counter}"
+        counter += 1
+    os.makedirs(directory_name)
+    os.makedirs(f'{directory_name}/labels')
+    os.makedirs(f'{directory_name}/JPEGImages')
+    os.makedirs(f'{directory_name}/mask')
 
     ################ INITIAL DETECTION #################
 
@@ -523,7 +529,7 @@ if __name__ == '__main__':
 
     # Set initial object pose 
     initial_pose = airsim.Pose(
-        airsim.Vector3r(2.5,0,0) + client.simGetVehiclePose().position,
+        airsim.Vector3r(initial_dist,0,0) + client.simGetVehiclePose().position,
         airsim.to_quaternion(0,0,np.deg2rad(180))
         )
     client.simSetObjectPose(DET_OBJ_NAME, initial_pose, True)
@@ -569,43 +575,43 @@ if __name__ == '__main__':
 
     try:
         ########### OBJECT RECOGNITION ##############
-        for degree in range(0,360,20):
-            print(cont)
-            rotate_object(client, degree, 'y')
-            png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
-            data = labels_format(points2D, parameters)
-            save_files(data, png, mask, cont)
-            # show_image(points2D, png)
-            cont+=1
+        # for degree in range(0,360,20):
+        #     print(cont)
+        #     rotate_object(client, degree, 'y')
+        #     png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+        #     # data = labels_format(points2D, parameters)
+        #     # save_files(data, png, mask, cont)
+        #     show_image(points2D, png)
+        #     cont+=1
 
-        for degree in range(0,360,20):
-            print(cont)
-            rotate_object(client, degree, 'z')
-            png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
-            data = labels_format(points2D, parameters)
-            save_files(data, png, mask, cont)
-            # show_image(points2D, png)
-            cont+=1
+        # for degree in range(0,360,20):
+        #     print(cont)
+        #     rotate_object(client, degree, 'z')
+        #     png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+        #     # data = labels_format(points2D, parameters)
+        #     # save_files(data, png, mask, cont)
+        #     show_image(points2D, png)
+        #     cont+=1
 
         ############## -- ################
         while True:
             print(cont)
-            # Change background
-            client.simSetObjectMaterialFromTexture(
-                sphere_name,
-                random.choice(glob.glob(os.getcwd() + '/backgrounds/*'))
-            )
+            # # Change background
+            # client.simSetObjectMaterialFromTexture(
+            #     sphere_name,
+            #     random.choice(glob.glob(os.getcwd() + '/backgrounds/*'))
+            # )
 
-            # Change camera pose
-            change_cam_pose(client, cont)
+            # # Change camera pose
+            # change_cam_pose(client, cont)
             png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
     
             ## Display image 
-            # show_image(points2D, png)
+            show_image(points2D, png)
 
             # Save files
-            data = labels_format(points2D, parameters)
-            save_files(data, png, mask, cont)
+            # data = labels_format(points2D, parameters)
+            # save_files(data, png, mask, cont)
 
             time.sleep(0.01)
             cont +=1
