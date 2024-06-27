@@ -54,6 +54,7 @@ Object
 └── labels
     ├── 0.txt
     └── ...
+```
 
 (You must include the 3D model manually)
 
