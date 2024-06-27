@@ -4,7 +4,6 @@ import math
 import numpy as np
 import re
 import time
-import transforms3d
 import random
 import os
 import glob
