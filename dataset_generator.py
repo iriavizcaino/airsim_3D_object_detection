@@ -574,43 +574,43 @@ if __name__ == '__main__':
 
     try:
         ########### OBJECT RECOGNITION ##############
-        # for degree in range(0,360,20):
-        #     print(cont)
-        #     rotate_object(client, degree, 'y')
-        #     png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
-        #     # data = labels_format(points2D, parameters)
-        #     # save_files(data, png, mask, cont)
-        #     show_image(points2D, png)
-        #     cont+=1
+        for degree in range(0,360,20):
+            print(cont)
+            rotate_object(client, degree, 'y')
+            png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+            # data = labels_format(points2D, parameters)
+            # save_files(data, png, mask, cont)
+            show_image(points2D, png)
+            cont+=1
 
-        # for degree in range(0,360,20):
-        #     print(cont)
-        #     rotate_object(client, degree, 'z')
-        #     png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
-        #     # data = labels_format(points2D, parameters)
-        #     # save_files(data, png, mask, cont)
-        #     show_image(points2D, png)
-        #     cont+=1
+        for degree in range(0,360,20):
+            print(cont)
+            rotate_object(client, degree, 'z')
+            png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
+            # data = labels_format(points2D, parameters)
+            # save_files(data, png, mask, cont)
+            show_image(points2D, png)
+            cont+=1
 
         ############## -- ################
         while True:
             print(cont)
-            # # Change background
-            # client.simSetObjectMaterialFromTexture(
-            #     sphere_name,
-            #     random.choice(glob.glob(os.getcwd() + '/backgrounds/*'))
-            # )
+            # Change background
+            client.simSetObjectMaterialFromTexture(
+                sphere_name,
+                random.choice(glob.glob(os.getcwd() + '/backgrounds/*'))
+            )
 
-            # # Change camera pose
-            # change_cam_pose(client, cont)
+            # Change camera pose
+            change_cam_pose(client, cont)
             png, mask, points2D = get_image_detections(client,camera_name, image_type, CM, initial_veh_pose, initial_pose, vertices)
     
             ## Display image 
-            show_image(points2D, png)
+            # show_image(points2D, png)
 
             # Save files
-            # data = labels_format(points2D, parameters)
-            # save_files(data, png, mask, cont)
+            data = labels_format(points2D, parameters)
+            save_files(data, png, mask, cont)
 
             time.sleep(0.01)
             cont +=1
