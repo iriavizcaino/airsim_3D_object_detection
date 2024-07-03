@@ -16,9 +16,9 @@ get_height = lambda cv2_img : (cv2_img.shape[0])
 
 # Define Objects names
 DET_OBJ_NAME = 'excavator_2'
-sphere_name = 'Inverted_Sphere'
-directory_name = 'Excavator'
-light_name = 'LightSource'
+SPHERE_NAME = 'Inverted_Sphere'
+DIRECTORY_NAME = 'Excavator'
+LIGHT_NAME = 'LightSource'
 initial_dist = 2.5
 
 # Define movement limits 
@@ -223,7 +223,7 @@ def change_cam_pose(client, cont):
 
     # Adjust Light
     client.simSetObjectPose(
-        light_name,
+        LIGHT_NAME,
         veh_pose,
         True
     )
@@ -327,7 +327,7 @@ def camera_json(CM):
         CM[0][2],
         CM[0][0]
     )
-    with open(f'{directory_name}/camera.json','w') as f:
+    with open(f'{DIRECTORY_NAME}/camera.json','w') as f:
         f.write(data)
 
 def image_points(vertices, cam_mat):
@@ -365,11 +365,11 @@ def save_files(data, png, mask, cont):
     Returns:
     None
     """
-    with open(f'{directory_name}/labels/{cont}.txt','w') as f:
+    with open(f'{DIRECTORY_NAME}/labels/{cont}.txt','w') as f:
         f.write(data)
     
-    cv2.imwrite(f'{directory_name}/JPEGImages/{cont}.png',png)
-    cv2.imwrite(f'{directory_name}/mask/{cont}.png',mask)
+    cv2.imwrite(f'{DIRECTORY_NAME}/JPEGImages/{cont}.png',png)
+    cv2.imwrite(f'{DIRECTORY_NAME}/mask/{cont}.png',mask)
 
 def show_image(points2D, png):
     """
@@ -504,27 +504,27 @@ if __name__ == '__main__':
     client.simAddDetectionFilterMeshName(camera_name, image_type['scene'], DET_OBJ_NAME)
 
     # Create directory to save files
-    base_directory_name = directory_name 
+    base_DIRECTORY_NAME = DIRECTORY_NAME 
     counter = 2
-    while os.path.exists(directory_name):
-        directory_name = f"{base_directory_name}{counter}"
+    while os.path.exists(DIRECTORY_NAME):
+        DIRECTORY_NAME = f"{base_DIRECTORY_NAME}{counter}"
         counter += 1
-    os.makedirs(directory_name)
-    os.makedirs(f'{directory_name}/labels')
-    os.makedirs(f'{directory_name}/JPEGImages')
-    os.makedirs(f'{directory_name}/mask')
+    os.makedirs(DIRECTORY_NAME)
+    os.makedirs(f'{DIRECTORY_NAME}/labels')
+    os.makedirs(f'{DIRECTORY_NAME}/JPEGImages')
+    os.makedirs(f'{DIRECTORY_NAME}/mask')
 
     ################ INITIAL DETECTION #################
 
     # Set vehicle pose in sphere center
-    initial_veh_pose = client.simGetObjectPose(sphere_name)
+    initial_veh_pose = client.simGetObjectPose(SPHERE_NAME)
     client.simSetVehiclePose(
         initial_veh_pose, # in sphere center
         True
     )
 
     # Set light pose
-    client.simSetObjectPose(light_name, initial_veh_pose)
+    client.simSetObjectPose(LIGHT_NAME, initial_veh_pose)
 
     # Set initial object pose 
     initial_pose = airsim.Pose(
@@ -597,7 +597,7 @@ if __name__ == '__main__':
             print(cont)
             # Change background
             client.simSetObjectMaterialFromTexture(
-                sphere_name,
+                SPHERE_NAME,
                 random.choice(glob.glob(os.getcwd() + '/backgrounds/*'))
             )
 
@@ -617,4 +617,4 @@ if __name__ == '__main__':
             
         cv2.destroyAllWindows()
     except KeyboardInterrupt:
-        data_split(os.getcwd() + f"/{directory_name}" )
+        data_split(os.getcwd() + f"/{DIRECTORY_NAME}" )
